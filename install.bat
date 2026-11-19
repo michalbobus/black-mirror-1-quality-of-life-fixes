@@ -5,7 +5,7 @@ set "HRA=D:\Hry\Steam\steamapps\common\Black Mirror"
 if not "%~1"=="" set "HRA=%~1"
 if not exist "%HRA%\agds.exe" (
   echo Nenašiel som agds.exe v "%HRA%".
-  echo Použitie: instaluj.bat "cesta\k\hre"
+  echo Použitie: install.bat "cesta\k\hre"
   pause & exit /b 1
 )
 rem dgddraw.dll = dgVoodoo2 2.87.6 (premenovaný DDraw.dll), DDraw.dll = doplnok pre filmy na celú šírku
