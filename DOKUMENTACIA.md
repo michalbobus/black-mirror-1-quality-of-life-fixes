@@ -86,6 +86,9 @@ Meranie (19. 11. 2026, hlavná ponuka, relatívny pohyb cez `SendInput` vrátane
 
 Plynulý kurzor rýchlosť nemení (Fps 60 = pôvodná hra), citlivosť 0.5 presne polovičná.
 
+## Rozpracované
+Vyhladzovanie postáv (profily filtrov pri zväčšení 800×600) – plán a postup v `ROZPRACOVANE.md`.
+
 ## Inštalácia
 - `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (ten len ak ešte neexistuje) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
 - `uninstall.bat` – súbory zmaže a príznak odstráni
