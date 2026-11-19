@@ -38,13 +38,36 @@ Hra číta myš zo správ okna (WM_MOUSEMOVE), `GetCursorPos` neimportuje. dgVoo
 
 ## Zvyšky na obrazovke (optimizedraw=0)
 Hra štandardne posiela na obrazovku len zmenené obdĺžniky (voľba `optimizedraw=1` v agds.cfg, premenná 0x488080; funkcia zobrazenia 0x43e78f robí Blt zadného povrchu 0x597e60 do primárneho 0x597e5c). S dgVoodoo pritom ostávali zvyšky – napr. nápis „do spcke knihovněstnosti“ (dva nápisy cez seba) po rýchlom pohybe kurzora v hale. Pri `optimizedraw=0` sa každú snímku pošle celý obraz jedným Blt – po troch rýchlych prechodoch kurzorom žiadne zvyšky (overené 19. 11. 2026, save.1, hala).
-`install.bat` dopíše `optimizedraw=0` na koniec agds.cfg (len ak tam voľba ešte nie je), `uninstall.bat` riadok odstráni (súbor je potom zhodný s pôvodným, záloha v `zaloha/agds.cfg`).
+`install.bat` dopíše `optimizedraw=0` a `videomem=0` na koniec agds.cfg (každú len ak tam ešte nie je), `uninstall.bat` tieto riadky odstráni (súbor je potom zhodný s pôvodným, záloha v `zaloha/agds.cfg`).
 
 ## Časovanie enginu
 - Hlavná slučka 0x44218d: PeekMessage → ak nie je správa, snímka 0x4413db = logika 0x402dfb + zobrazenie 0x43e78f.
 - 0x402dfb pri `normalize_speed=1` (0x488078, predvolené) čaká aktívne (QPC + SleepEx(0)) na tik **1/25 s** (pri `slowcomp` 2/25 s). Zmerané za behu: 25 cyklov/s. Všetko (animácie, chôdza, kurzor) je viazané na tento tik – zrýchlenie tiku by zrýchlilo celú hru.
 - Poloha myši: 0x506ff0 (x), 0x506fa8 (y) v súradniciach 800×600, nastavuje ju WM_MOUSEMOVE v okennej procedúre 0x440c79. Kurzor je softvérový, kreslí ho hra do snímky (systémový kurzor skrýva: ShowCursor(0), SetCursor(0) v 0x441446 a pri WM_SETCURSOR).
 - Voľby agds.cfg (tabuľka v 0x4027xx): optimizeway, optimizedraw, slowcomp, debug, sound, normalize_sample, normalize_speed, oldscr, extedit, path, help, loglevel, freemem, videomode, transparency, precisemove, debug_grab, shadow_min, shadow_max, fade_type, videomem, loguseractions, widevideo, film_test, film_yuy2, film_switch, charset, empty_slot, force_soft_indent.
+
+## Plynulý kurzor (config.ini [Cursor] Fps)
+Logika hry beží na 25 tikoch/s (animácie, chôdza – tak je hra nakreslená, zrýchlenie tiku by zrýchlilo celú hru). Kurzor je však objekt scény a doplnok ho prekresľuje aj medzi tikmi:
+- hák na 0x43cfee (obal `SleepEx(0)` – volá sa len v slučke, kde logika čaká na ďalší tik): najviac raz za 3/4 z 1/Fps prečíta `GetCursorPos` (dgVoodoo drží kurzor v súradniciach hry 800×600); ak sa myš pohla a hra je v scéne (0x584ff8 ≠ 0, nie film 0x58512c, 0x49bde0 = 0, 0x49eb48 = 0, `0x43cf49()` = 0), zapíše polohu ako WM_MOUSEMOVE (0x507010/14), zavolá 0x417a8d, pripočíta posun scény (`[0x49eb1c]+0x5d5/0x5d9`), presunie objekt kurzora `0x4094de(0)`, prekreslí `0x426c43([0x49eb1c])` a zobrazí `0x43e78f`,
+- neprekresľuje, ak do tiku ostávajú < 2 ms (čas posledného tiku: QPC v 0x49bda0),
+- hák na 0x402fa1 (plánovanie tiku): pôvodne „posledný tik = teraz“, takže každé oneskorenie (zobrazenie s vsync čaká až 16 ms) hru natrvalo spomalí; teraz „posledný = plánovaný čas“, pri oneskorení ≥ 1 tik (načítanie) „teraz“,
+- `Fps=0` → háky kurzora a tiku sa nevložia.
+
+**Nutné `videomem=0` v agds.cfg** (zadný povrch v systémovej pamäti). Pri predvolenom `videomem=1` je povrch v pamäti grafiky a softvérový renderer ho cez dgVoodoo zamyká → jedno prekreslenie ~33 ms (s plynulým kurzorom spadla hra na 15 tikov/s). Pri `videomem=0`: prekreslenie pár ms. `install.bat` dopíše `videomem=0` (ak chýba), `uninstall.bat` ho odstráni.
+
+Merania (19. 11. 2026, save.1 hala, myš krúži cez SetCursorPos, vsync dgVoodoo zapnutý, monitor 60 Hz):
+| verzia | slučka hry | prekreslení kurzora navyše | spolu |
+|---|---|---|---|
+| videomem=1 | 15,3/s | 15,3/s | hra spomalená |
+| videomem=0, bez ochrany tiku, bez vsync | 24,3/s | 57,6/s | |
+| + ochrana 8 ms pred tikom, bez vsync | 25,0/s | 43,6/s | 69/s |
+| + vsync | 24,0/s | 36,3/s | logika spomalená o 4 % |
+| + ochrana 1/Fps + 2 ms | 25,0/s | 25,0–30,3/s | 50–55/s |
+| **+ plánovanie tiku, ochrana 2 ms (finálne)** | **25,0/s** | **35,0/s** | **60/s** |
+
+Chôdza postavy (hala, 2 trasy, 3×): bez pohybu myši 3,95 / 3,35 s, s krúžiacou myšou 3,97–4,01 / 3,37–3,41 s – rozdiel v rámci presnosti merania (snímky ~70 ms). Animácie sa prekresľovaním nezrýchľujú. Overené aj inventár (lišta dole) – bez zvyškov.
+
+Počítadlo prekreslení navyše: DDraw.dll + 0x1000 + 0x800 + 0x4C (na meranie, `nastroje/pamat.py`).
 
 ## Inštalácia
 - `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (ten len ak ešte neexistuje) a zapíše príznak DPI (voliteľný parameter: cesta k hre)

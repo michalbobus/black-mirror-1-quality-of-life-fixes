@@ -1,19 +1,25 @@
-"""Zostaví proxy DDraw.dll pre Black Mirror (agds.exe): filmy roztiahnuté na celú šírku obrazovky.
+"""Zostaví proxy DDraw.dll pre Black Mirror (agds.exe): filmy na celú šírku + plynulý kurzor.
 
 Ako to funguje:
   * Hra importuje DDRAW.dll!DirectDrawCreateEx. Táto knižnica sa volá DDraw.dll a všetky exporty
     prepošle (forwarder) na dgVoodoo, ktorý je v priečinku hry premenovaný na dgddraw.dll.
-  * Pri načítaní (DllMain) overí bajty v agds.exe a vloží dva skoky (exe na disku sa nemení):
-      0x44198e  – štart filmu, hneď po tom, čo hra uloží obdĺžnik filmu do 0x58510c..0x585118
+  * Pri načítaní (DllMain) prečíta config.ini vedľa seba, overí bajty v agds.exe a vloží skoky do pamäte
+    (exe na disku sa nemení):
+      0x44198e  – štart filmu (hra práve uložila obdĺžnik filmu do 0x58510c..0x585118)
       0x441fea  – začiatok funkcie konca filmu
-  * Štart: ak film zaberá celú šírku (ľavý okraj <= 0, pravý >= 800) a nad ním je letterbox (horný > 0),
-    zapíše obdĺžnik filmu do výrezu (DisplayROI) dgVoodoo – dgVoodoo ho potom zväčší so zachovaním
-    pomeru strán, teda na celú šírku obrazovky. Pôvodný výrez si uloží.
-  * Koniec: vráti pôvodný výrez.
-  * Zapnutie/vypnutie: config.ini vedľa tejto knižnice, [Movies] FullWidth=1/0 (chýba -> 1).
-    Pri 0 sa háky vôbec nevložia a filmy ostanú v rámci 4:3.
-  * Výrez dgVoodoo 2.87.6 je v dgddraw.dll na RVA 0x6c460 (RECT), 0x18 bajtov pred ním šírka a výška
-    režimu. Zapisuje sa len vtedy, keď tam je 800 a 600 (iná verzia dgVoodoo -> nerobí nič).
+      0x43cfee  – obal SleepEx(0), volá sa len v slučke, kde logika čaká na ďalší tik (25 tikov/s)
+  * [Movies] FullWidth=1: pri štarte filmu, ktorý zaberá celú šírku a má letterbox, nastaví výrez
+    (DisplayROI) dgVoodoo na obdĺžnik filmu – dgVoodoo ho zväčší na celú šírku obrazovky; na konci výrez vráti.
+    Výrez dgVoodoo 2.87.6: RECT v dgddraw.dll na RVA 0x6c460, 0x18 B pred ním šírka a výška režimu (800, 600).
+  * [Cursor] Fps=60: počas čakania na tik najviac Fps-krát za sekundu prečíta polohu myši (GetCursorPos;
+    dgVoodoo drží kurzor v súradniciach hry 800x600). Ak sa pohla a hra je v scéne, zapíše ju ako
+    WM_MOUSEMOVE (0x507010/14), prepočíta ako tik (0x417a8d + posun scény), presunie objekt kurzora
+    (0x4094de(0)), prekreslí scénu (0x426c43) a zobrazí ju (0x43e78f). Logika hry ostáva na 25 tikoch/s.
+    Prekreslenie sa vynechá, ak do ďalšieho tiku ostávajú menej ako 2 ms (čas tiku: QPC v 0x49bda0).
+  * Spolu s kurzorom: 0x402fa1 – plánovanie tiku. Hra po čakaní nastaví „posledný tik = teraz“, takže každé
+    oneskorenie (napr. zobrazenie čakajúce na vsync) hru natrvalo spomalí. Hák nastaví „posledný = plánovaný čas“
+    (oneskorenie sa dorovná pri ďalšom tiku); ak je oneskorenie aspoň 1 tik (načítanie a pod.), použije „teraz“. Pozor: bez videomem=0 v agds.cfg trvá prekreslenie ~33 ms a hru spomalí.
+    Fps=0 -> háky kurzora a plánovania tiku sa nevložia.
 
 Použitie:  python zostav_dll.py VYSTUP.dll
 """
@@ -24,20 +30,36 @@ import sys
 import keystone
 
 RVA = 0x1000
-O_KOD, O_DATA, O_IMPORT, O_EXPORT, O_CESTA, O_KONIEC = 0x000, 0x400, 0x480, 0x600, 0xA00, 0xC00
-# dáta
-O_AKTIVNY = O_DATA            # adresa RECT v dgVoodoo počas filmu, inak 0
-O_ULOZENY = O_DATA + 4        # pôvodný RECT (16 B)
-O_DGMENO = O_DATA + 0x20      # "dgddraw.dll"
-O_SEKCIA = O_DATA + 0x30      # "Movies"
-O_KLUC = O_DATA + 0x40        # "FullWidth"
-O_INIMENO = O_DATA + 0x50     # "config.ini"
-# O_CESTA: vyrovnávacia pamäť na úplnú cestu k ini (512 B)
-INI_SEKCIA, INI_KLUC, INI_MENO = "Movies", "FullWidth", "config.ini"
-# importy KERNEL32
-IMPORTY = ["VirtualProtect", "GetModuleHandleA", "GetModuleFileNameA", "GetPrivateProfileIntA"]
-O_ILT, O_IAT, O_MENA = O_IMPORT + 0x30, O_IMPORT + 0x48, O_IMPORT + 0x60   # 2 deskriptory (40 B) + tabuľky
-O_IAT_VP, O_IAT_GMH, O_IAT_GMFN, O_IAT_GPPI = (O_IAT + 4 * i for i in range(4))
+O_KOD, O_DATA, O_IMPORT, O_EXPORT, O_CESTA, O_KONIEC = 0x000, 0x800, 0x900, 0xB00, 0xF00, 0x1100
+
+# dáta (posuny od O_DATA)
+DATA = {
+    "AKTIVNY": 0x00,     # adresa RECT v dgVoodoo počas filmu, inak 0
+    "ULOZENY": 0x04,     # pôvodný RECT (16 B)
+    "TERAZ": 0x18, "TERAZ4": 0x1C,          # QPC teraz (8 B)
+    "POSLEDNY": 0x20, "POSLEDNY4": 0x24,    # QPC posledného prekreslenia kurzora
+    "PERIODA": 0x28,                        # najkratší odstup prekreslení: 3/4 z 1/Fps (tempo dáva vsync)
+    "BOD": 0x30, "BOD4": 0x34,              # GetCursorPos
+    "BODST": 0x38, "BODST4": 0x3C,          # posledná spracovaná poloha
+    "FREKV": 0x40, "FREKV4": 0x44,          # QueryPerformanceFrequency
+    "FPS": 0x48,
+    "POCET": 0x4C,       # počet prekreslení kurzora mimo tiku (na meranie)
+    "LIMIT": 0x50,       # QPC tiky od začiatku tiku, po ktorých sa už kurzor neprekresľuje (1/25 s - 2 ms)
+    "TIK": 0x54,         # QPC tiky jedného tiku logiky (1/25 s)
+    "DGMENO": 0x60,      # "dgddraw.dll"
+    "S_MOVIES": 0x70, "K_FULLWIDTH": 0x80, "S_CURSOR": 0x90, "K_FPS": 0xA0, "INIMENO": 0xB0,
+}
+RETAZCE = {"DGMENO": "dgddraw.dll", "S_MOVIES": "Movies", "K_FULLWIDTH": "FullWidth",
+           "S_CURSOR": "Cursor", "K_FPS": "Fps", "INIMENO": "config.ini"}
+
+IMPORTY = {
+    "KERNEL32.dll": ["VirtualProtect", "GetModuleHandleA", "GetModuleFileNameA", "GetPrivateProfileIntA",
+                     "QueryPerformanceCounter", "QueryPerformanceFrequency"],
+    "USER32.dll": ["GetCursorPos"],
+}
+IAT_MENA = {"VirtualProtect": "IAT_VP", "GetModuleHandleA": "IAT_GMH", "GetModuleFileNameA": "IAT_GMFN",
+            "GetPrivateProfileIntA": "IAT_GPPI", "QueryPerformanceCounter": "IAT_QPC",
+            "QueryPerformanceFrequency": "IAT_QPF", "GetCursorPos": "IAT_GCP"}
 
 CIEL = "dgddraw"
 EXPORTY = ["AcquireDDThreadLock", "CompleteCreateSysmemSurface", "D3DParseUnknownCommand", "DDInternalLock",
@@ -45,13 +67,9 @@ EXPORTY = ["AcquireDDThreadLock", "CompleteCreateSysmemSurface", "D3DParseUnknow
            "DirectDrawEnumerateA", "DirectDrawEnumerateExA", "DirectDrawEnumerateExW", "DirectDrawEnumerateW",
            "DllCanUnloadNow", "DllGetClassObject", "ReleaseDDThreadLock"]
 
-ROI_RVA = 0x6C460
-HAK_START, HAK_START_SPAT = 0x44198E, 0x441995
-HAK_KONIEC, HAK_KONIEC_SPAT = 0x441FEA, 0x441FF4
-SIRKA, VYSKA = 800, 600
-
-# Kód je nezávislý od polohy: každý blok si zistí vlastnú adresu (call/pop) a ostatné odvodí od nej.
-# {X} sa nahradí posunom (O_X - poloha návestia) – rieši funkcia preloz().
+# Kód je nezávislý od polohy: každý blok si zistí vlastnú adresu (call/pop) a dáta adresuje [ebx + {MENO}].
+# Funkcie hry sa volajú cez register (mov eax, ADRESA / call eax), keystone prekladá od adresy 0.
+# Bloky: dllmain, start (film), koniec (film), kurzor.
 KOD = """
 dllmain:
     cmp dword ptr [esp+8], 1
@@ -67,12 +85,12 @@ dm_tu:
     push esi
     call dword ptr [ebx + {IAT_GMFN}]
     test eax, eax
-    jz dm_hacky
+    jz dm_koniec
     lea ecx, [edi + eax]
 dm_lomka:
     dec ecx
     cmp ecx, edi
-    jb dm_hacky
+    jb dm_koniec
     cmp byte ptr [ecx], 0x5c
     jne dm_lomka
     inc ecx
@@ -83,31 +101,32 @@ dm_kopia:
     stosb
     test al, al
     jnz dm_kopia
-    lea eax, [ebx + {CESTA}]
-    push eax
-    push 1
-    lea eax, [ebx + {KLUC}]
-    push eax
-    lea eax, [ebx + {SEKCIA}]
-    push eax
-    call dword ptr [ebx + {IAT_GPPI}]
-    test eax, eax
-    jz dm_koniec
-dm_hacky:
-    cmp dword ptr [0x44198e], 0x51343d83
-    jne dm_koniec
-    cmp dword ptr [0x441fea], 0x83ec8b55
-    jne dm_koniec
-    cmp dword ptr [0x441fee], 0x5851203d
-    jne dm_koniec
+
     push 0
     push esp
     push 0x40
-    push 0x2000
-    push 0x441000
+    push 0x41000
+    push 0x402000
     call dword ptr [ebx + {IAT_VP}]
     test eax, eax
     jz dm_uprac
+
+    lea eax, [ebx + {CESTA}]
+    push eax
+    push 1
+    lea eax, [ebx + {K_FULLWIDTH}]
+    push eax
+    lea eax, [ebx + {S_MOVIES}]
+    push eax
+    call dword ptr [ebx + {IAT_GPPI}]
+    test eax, eax
+    jz dm_kurzor
+    cmp dword ptr [0x44198e], 0x51343d83
+    jne dm_kurzor
+    cmp dword ptr [0x441fea], 0x83ec8b55
+    jne dm_kurzor
+    cmp dword ptr [0x441fee], 0x5851203d
+    jne dm_kurzor
     mov byte ptr [0x44198e], 0xe9
     lea eax, [ebx + {START}]
     sub eax, 0x441993
@@ -119,11 +138,70 @@ dm_hacky:
     mov dword ptr [0x441feb], eax
     mov dword ptr [0x441fef], 0x90909090
     mov byte ptr [0x441ff3], 0x90
+
+dm_kurzor:
+    lea eax, [ebx + {CESTA}]
+    push eax
+    push 60
+    lea eax, [ebx + {K_FPS}]
+    push eax
+    lea eax, [ebx + {S_CURSOR}]
+    push eax
+    call dword ptr [ebx + {IAT_GPPI}]
+    test eax, eax
+    jle dm_ochrana
+    mov dword ptr [ebx + {FPS}], eax
+    cmp dword ptr [0x43cfee], 0x6aec8b55
+    jne dm_ochrana
+    cmp dword ptr [0x43cff2], 0x08458b00
+    jne dm_ochrana
+    lea eax, [ebx + {FREKV}]
+    push eax
+    call dword ptr [ebx + {IAT_QPF}]
+    test eax, eax
+    jz dm_ochrana
+    mov eax, dword ptr [ebx + {FREKV}]
+    mov edx, dword ptr [ebx + {FREKV4}]
+    mov ecx, dword ptr [ebx + {FPS}]
+    cmp edx, ecx
+    jae dm_ochrana
+    div ecx
+    mov dword ptr [ebx + {PERIODA}], eax
+    mov eax, dword ptr [ebx + {FREKV}]
+    mov edx, dword ptr [ebx + {FREKV4}]
+    mov ecx, 500
+    cmp edx, ecx
+    jae dm_ochrana
+    div ecx
+    imul ecx, eax, 20
+    mov dword ptr [ebx + {TIK}], ecx
+    imul eax, eax, 19
+    mov dword ptr [ebx + {LIMIT}], eax
+    mov eax, dword ptr [ebx + {PERIODA}]
+    lea eax, [eax + eax * 2]
+    shr eax, 2
+    mov dword ptr [ebx + {PERIODA}], eax
+    mov dword ptr [ebx + {BODST}], 0xffffffff
+    mov dword ptr [ebx + {BODST4}], 0xffffffff
+    mov byte ptr [0x43cfee], 0xe9
+    lea eax, [ebx + {KURZOR}]
+    sub eax, 0x43cff3
+    mov dword ptr [0x43cfef], eax
+    cmp dword ptr [0x402fa1], 0x49bda8a1
+    jne dm_ochrana
+    cmp dword ptr [0x402fa5], 0xbda0a300
+    jne dm_ochrana
+    mov byte ptr [0x402fa1], 0xe9
+    lea eax, [ebx + {TIKHAK}]
+    sub eax, 0x402fa6
+    mov dword ptr [0x402fa2], eax
+
+dm_ochrana:
     mov eax, [esp]
     push esp
     push eax
-    push 0x2000
-    push 0x441000
+    push 0x41000
+    push 0x402000
     call dword ptr [ebx + {IAT_VP}]
 dm_uprac:
     add esp, 4
@@ -201,35 +279,181 @@ ko_von:
     cmp dword ptr [0x585120], 0
     push 0x441ff4
     ret
+
+kurzor:
+    pushad
+    call ku_tu
+ku_tu:
+    pop ebx
+    lea eax, [ebx + {TERAZ}]
+    push eax
+    call dword ptr [ebx + {IAT_QPC}]
+    mov eax, dword ptr [ebx + {TERAZ}]
+    mov edx, dword ptr [ebx + {TERAZ4}]
+    sub eax, dword ptr [ebx + {POSLEDNY}]
+    sbb edx, dword ptr [ebx + {POSLEDNY4}]
+    jnz ku_cas
+    cmp eax, dword ptr [ebx + {PERIODA}]
+    jb ku_von
+ku_cas:
+    mov eax, dword ptr [ebx + {TERAZ}]
+    mov dword ptr [ebx + {POSLEDNY}], eax
+    mov eax, dword ptr [ebx + {TERAZ4}]
+    mov dword ptr [ebx + {POSLEDNY4}], eax
+    mov eax, dword ptr [ebx + {TERAZ}]
+    mov edx, dword ptr [ebx + {TERAZ4}]
+    sub eax, dword ptr [0x49bda0]
+    sbb edx, dword ptr [0x49bda4]
+    jnz ku_von
+    cmp eax, dword ptr [ebx + {LIMIT}]
+    jae ku_von
+    lea eax, [ebx + {BOD}]
+    push eax
+    call dword ptr [ebx + {IAT_GCP}]
+    test eax, eax
+    jz ku_von
+    mov eax, dword ptr [ebx + {BOD}]
+    mov edx, dword ptr [ebx + {BOD4}]
+    cmp eax, dword ptr [ebx + {BODST}]
+    jne ku_zmena
+    cmp edx, dword ptr [ebx + {BODST4}]
+    je ku_von
+ku_zmena:
+    mov dword ptr [ebx + {BODST}], eax
+    mov dword ptr [ebx + {BODST4}], edx
+    cmp eax, 0
+    jl ku_von
+    cmp eax, 800
+    jge ku_von
+    cmp edx, 0
+    jl ku_von
+    cmp edx, 600
+    jge ku_von
+    cmp dword ptr [0x584ff8], 0
+    je ku_von
+    cmp dword ptr [0x58512c], 0
+    jne ku_von
+    cmp dword ptr [0x49bde0], 0
+    jne ku_von
+    cmp dword ptr [0x49eb48], 0
+    jne ku_von
+    cmp dword ptr [0x49eb1c], 0
+    je ku_von
+    mov eax, 0x43cf49
+    call eax
+    test eax, eax
+    jnz ku_von
+    mov eax, dword ptr [ebx + {BOD}]
+    mov dword ptr [0x507010], eax
+    mov eax, dword ptr [ebx + {BOD4}]
+    mov dword ptr [0x507014], eax
+    mov eax, 0x417a8d
+    call eax
+    mov eax, dword ptr [0x49eb1c]
+    mov ecx, dword ptr [eax + 0x5d5]
+    add dword ptr [0x506ff0], ecx
+    mov ecx, dword ptr [eax + 0x5d9]
+    add dword ptr [0x506fa8], ecx
+    push 0
+    mov eax, 0x4094de
+    call eax
+    add esp, 4
+    push dword ptr [0x49eb1c]
+    mov eax, 0x426c43
+    call eax
+    add esp, 4
+    mov eax, 0x43e78f
+    call eax
+    inc dword ptr [ebx + {POCET}]
+ku_von:
+    popad
+    push ebp
+    mov ebp, esp
+    push 0
+    push 0x43cff3
+    ret
+
+tikhak:
+    pushad
+    call ti_tu
+ti_tu:
+    pop ebx
+    mov eax, dword ptr [0x49bda8]
+    mov edx, dword ptr [0x49bdac]
+    sub eax, dword ptr [ebp - 0x44]
+    sbb edx, dword ptr [ebp - 0x40]
+    jnz ti_teraz
+    cmp eax, dword ptr [ebx + {TIK}]
+    jae ti_teraz
+    mov eax, dword ptr [ebp - 0x44]
+    mov dword ptr [0x49bda0], eax
+    mov eax, dword ptr [ebp - 0x40]
+    mov dword ptr [0x49bda4], eax
+    jmp ti_von
+ti_teraz:
+    mov eax, dword ptr [0x49bda8]
+    mov dword ptr [0x49bda0], eax
+    mov eax, dword ptr [0x49bdac]
+    mov dword ptr [0x49bda4], eax
+ti_von:
+    popad
+    mov eax, dword ptr [0x49bda8]
+    mov ecx, dword ptr [0x49bdac]
+    push 0x402fb7
+    ret
 """
 
-POSUNY = {"IAT_VP": O_IAT_VP, "IAT_GMH": O_IAT_GMH, "IAT_GMFN": O_IAT_GMFN, "IAT_GPPI": O_IAT_GPPI,
-          "DGMENO": O_DGMENO, "AKTIVNY": O_AKTIVNY, "ULOZENY": O_ULOZENY,
-          "SEKCIA": O_SEKCIA, "KLUC": O_KLUC, "INIMENO": O_INIMENO, "CESTA": O_CESTA}
+BLOKY = ["dm_tu", "st_tu", "ko_tu", "ku_tu", "ti_tu"]
+
+
+def rozlozenie_importov():
+    """Vráti offsety IAT podľa mena funkcie a polohy tabuliek importov."""
+    n_desk = len(IMPORTY) + 1
+    o_ilt = O_IMPORT + 20 * n_desk
+    pocet = sum(len(f) + 1 for f in IMPORTY.values())
+    o_iat = o_ilt + 4 * pocet
+    o_mena = o_iat + 4 * pocet
+    iat = {}
+    i = 0
+    for dll, funkcie in IMPORTY.items():
+        for f in funkcie:
+            iat[IAT_MENA[f]] = o_iat + 4 * i
+            i += 1
+        i += 1
+    return iat, o_ilt, o_iat, o_mena, 4 * pocet
+
+
+IAT, O_ILT, O_IAT, O_MENA, IAT_DLZKA = rozlozenie_importov()
 
 
 def preloz():
     """Preloží KOD. Posuny k dátam sa počítajú od návestia *_tu bloku (adresa z call/pop).
 
-    Návestia sa nájdu ako tri inštrukcie `call +0` (E8 00 00 00 00); všetky posuny sú > 127,
-    takže majú vždy 32-bitový tvar (keystone pri rozdiele návestí počíta zle, preto sa nepoužíva) a dĺžka kódu sa medzi prechodmi nemení."""
+    Návestia sa nájdu ako inštrukcie `call +0` (E8 00 00 00 00). Rozdiel návestí (a - b) keystone
+    počíta zle, preto sa posuny dopočítavajú tu; prekladá sa opakovane, kým sa polohy neustália."""
     ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_32)
-    poradie = ["dm_tu", "st_tu", "ko_tu"]
-    bloky = dict.fromkeys(poradie, 0)
-    for _ in range(3):
+    bloky = dict.fromkeys(BLOKY, 0x100)
+    for _ in range(6):
+        posuny = {k: O_DATA + v for k, v in DATA.items()}
+        posuny.update(IAT)
+        posuny["CESTA"] = O_CESTA
+        # vstupy hákov = 6 bajtov pred návestím *_tu (pushad + call)
+        posuny.update(START=bloky["st_tu"] - 6, KONIEC=bloky["ko_tu"] - 6, KURZOR=bloky["ku_tu"] - 6,
+                      TIKHAK=bloky["ti_tu"] - 6)
         riadky, aktualne = [], None
         for r in KOD.splitlines():
-            if r.strip()[:-1] in bloky and r.strip().endswith(":"):
-                aktualne = r.strip()[:-1]
-            # štart/koniec = 6 bajtov pred svojím návestím *_tu (pushad + call)
-            posuny = dict(POSUNY, START=bloky["st_tu"] - 6, KONIEC=bloky["ko_tu"] - 6)
+            s = r.strip()
+            if s.endswith(":") and s[:-1] in bloky:
+                aktualne = s[:-1]
             for k, v in posuny.items():
-                r = r.replace("{" + k + "}", str(v - bloky[aktualne]) if aktualne else "")
+                if "{" + k + "}" in r:
+                    r = r.replace("{" + k + "}", str(v - bloky[aktualne]))
             riadky.append(r)
+        assert "{" not in "\n".join(riadky), [r for r in riadky if "{" in r]
         kod = bytes(ks.asm(chr(10).join(riadky), 0)[0])
         polohy = [m.start() + 5 for m in re.finditer(re.escape(bytes([0xE8, 0, 0, 0, 0])), kod)]
-        assert len(polohy) == 3, polohy
-        nove = dict(zip(poradie, polohy))
+        assert len(polohy) == len(BLOKY), polohy
+        nove = dict(zip(BLOKY, polohy))
         if nove == bloky:
             return kod
         bloky = nove
@@ -238,42 +462,49 @@ def preloz():
 
 def zostav():
     kod = preloz()
-    assert len(kod) <= O_DATA, len(kod)
+    assert len(kod) <= O_DATA, hex(len(kod))
     s = bytearray(O_KONIEC)
     s[O_KOD:O_KOD + len(kod)] = kod
-    for o, t in ((O_DGMENO, CIEL + ".dll"), (O_SEKCIA, INI_SEKCIA), (O_KLUC, INI_KLUC), (O_INIMENO, INI_MENO)):
+    for k, t in RETAZCE.items():
         b = (t + "\0").encode()
         assert len(b) <= 0x10
+        o = O_DATA + DATA[k]
         s[o:o + len(b)] = b
 
-    # import KERNEL32.dll (hint 0 + meno)
-    p, mena = O_MENA, []
-    for f in IMPORTY:
-        b = b"\0\0" + f.encode() + b"\0"
-        mena.append(p); s[p:p + len(b)] = b; p += (len(b) + 1) & ~1
-    dllm = p
-    s[dllm:dllm + 13] = b"KERNEL32.dll\0"
-    assert dllm + 13 <= O_EXPORT and O_ILT + 4 * len(IMPORTY) + 4 <= O_IAT and O_IAT + 4 * len(IMPORTY) + 4 <= O_MENA
-    struct.pack_into("<IIIII", s, O_IMPORT, RVA + O_ILT, 0, 0, RVA + dllm, RVA + O_IAT)
-    for i, m in enumerate(mena):
-        struct.pack_into("<I", s, O_ILT + 4 * i, RVA + m)
-        struct.pack_into("<I", s, O_IAT + 4 * i, RVA + m)
+    # importy: deskriptory, ILT a IAT (rovnaký obsah), mená (hint 0 + meno), mená knižníc
+    p = O_MENA
+    i = 0
+    for d, (dll, funkcie) in enumerate(IMPORTY.items()):
+        zac = i
+        for f in funkcie:
+            b = b"\0\0" + f.encode() + b"\0"
+            s[p:p + len(b)] = b
+            struct.pack_into("<I", s, O_ILT + 4 * i, RVA + p)
+            struct.pack_into("<I", s, O_IAT + 4 * i, RVA + p)
+            p += (len(b) + 1) & ~1
+            i += 1
+        i += 1                      # nulová položka na konci zoznamu knižnice
+        b = dll.encode() + b"\0"
+        s[p:p + len(b)] = b
+        struct.pack_into("<IIIII", s, O_IMPORT + 20 * d, RVA + O_ILT + 4 * zac, 0, 0, RVA + p,
+                         RVA + O_IAT + 4 * zac)
+        p += (len(b) + 1) & ~1
+    assert p <= O_EXPORT, hex(p)
 
     # export: všetko ako forwarder "dgddraw.Meno"
     n = len(EXPORTY)
     o_fn = O_EXPORT + 40
     o_mena = o_fn + 4 * n
     o_ord = o_mena + 4 * n
-    o_txt = o_ord + 2 * n
-    p = o_txt
+    p = o_ord + 2 * n
     meno_dll = p
-    s[p:p + 10] = b"DDraw.dll\0"; p += 10
+    s[p:p + 10] = b"DDraw.dll\0"
+    p += 10
     adr_mien, adr_fw = [], []
     for e in EXPORTY:
         b = (e + "\0").encode(); adr_mien.append(p); s[p:p + len(b)] = b; p += len(b)
         b = (f"{CIEL}.{e}\0").encode(); adr_fw.append(p); s[p:p + len(b)] = b; p += len(b)
     exp_dlzka = p - O_EXPORT
-    assert p <= O_CESTA
     assert EXPORTY == sorted(EXPORTY)
     struct.pack_into("<IIHHIIIIIII", s, O_EXPORT, 0, 0, 0, 0, RVA + meno_dll, 1, n, n,
                      RVA + o_fn, RVA + o_mena, RVA + o_ord)
@@ -298,10 +529,10 @@ def zostav():
     struct.pack_into("<HBBIIIIII", h, o, 0x10B, 6, 0, surove, 0, 0, RVA + O_KOD, RVA, RVA)
     struct.pack_into("<IIIHHHHHHIIIIHHIIIIII", h, o + 28, 0x10000000, 0x1000, 0x200, 4, 0, 0, 0, 4, 0, 0,
                      RVA + virt, 0x200, 0, 2, 0x40, 0x100000, 0x1000, 0x100000, 0x1000, 0, 16)
-    struct.pack_into("<II", h, o + 96 + 8 * 0, RVA + O_EXPORT, exp_dlzka)   # export
-    struct.pack_into("<II", h, o + 96 + 8 * 1, RVA + O_IMPORT, 40)          # import
-    struct.pack_into("<II", h, o + 96 + 8 * 5, RVA + o_rel, 12)             # presuny
-    struct.pack_into("<II", h, o + 96 + 8 * 12, RVA + O_IAT, 4 * len(IMPORTY) + 4)            # IAT
+    struct.pack_into("<II", h, o + 96 + 8 * 0, RVA + O_EXPORT, exp_dlzka)                # export
+    struct.pack_into("<II", h, o + 96 + 8 * 1, RVA + O_IMPORT, 20 * (len(IMPORTY) + 1))  # import
+    struct.pack_into("<II", h, o + 96 + 8 * 5, RVA + o_rel, 12)                          # presuny
+    struct.pack_into("<II", h, o + 96 + 8 * 12, RVA + O_IAT, IAT_DLZKA)                  # IAT
     sek = o + 0xE0
     h[sek:sek + 8] = b".text\0\0\0"
     struct.pack_into("<IIIIIIHHI", h, sek + 8, len(s), RVA, surove, 0x200, 0, 0, 0, 0, 0xE0000060)
