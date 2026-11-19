@@ -18,7 +18,7 @@ if not exist "%HRA%\config.ini" copy /y "%~dp0dgvoodoo\config.ini" "%HRA%\" >nul
 rem Pri škálovaní Windows nad 100 % by okno vyšlo väčšie ako obrazovka – hra dostane príznak HIGHDPIAWARE
 reg add "HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" /v "%HRA%\agds.exe" /t REG_SZ /d "~ HIGHDPIAWARE" /f >nul || goto chyba
 echo Hotovo: bezokrajový fullscreen, pomer strán 4:3 a filmy na celú šírku nainštalované do "%HRA%".
-echo Filmy na celú šírku sa zapínajú/vypínajú v "%HRA%\config.ini" (NaCeluSirku=1/0).
+echo Filmy na celú šírku sa zapínajú/vypínajú v "%HRA%\config.ini" (FullWidth=1/0).
 pause & exit /b 0
 :chyba
 echo Inštalácia zlyhala.

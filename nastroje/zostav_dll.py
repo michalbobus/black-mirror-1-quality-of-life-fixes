@@ -10,7 +10,7 @@ Ako to funguje:
     zapíše obdĺžnik filmu do výrezu (DisplayROI) dgVoodoo – dgVoodoo ho potom zväčší so zachovaním
     pomeru strán, teda na celú šírku obrazovky. Pôvodný výrez si uloží.
   * Koniec: vráti pôvodný výrez.
-  * Zapnutie/vypnutie: config.ini vedľa tejto knižnice, [Filmy] NaCeluSirku=1/0 (chýba -> 1).
+  * Zapnutie/vypnutie: config.ini vedľa tejto knižnice, [Filmy] FullWidth=1/0 (chýba -> 1).
     Pri 0 sa háky vôbec nevložia a filmy ostanú v rámci 4:3.
   * Výrez dgVoodoo 2.87.6 je v dgddraw.dll na RVA 0x6c460 (RECT), 0x18 bajtov pred ním šírka a výška
     režimu. Zapisuje sa len vtedy, keď tam je 800 a 600 (iná verzia dgVoodoo -> nerobí nič).
@@ -30,10 +30,10 @@ O_AKTIVNY = O_DATA            # adresa RECT v dgVoodoo počas filmu, inak 0
 O_ULOZENY = O_DATA + 4        # pôvodný RECT (16 B)
 O_DGMENO = O_DATA + 0x20      # "dgddraw.dll"
 O_SEKCIA = O_DATA + 0x30      # "Filmy"
-O_KLUC = O_DATA + 0x40        # "NaCeluSirku"
+O_KLUC = O_DATA + 0x40        # "FullWidth"
 O_INIMENO = O_DATA + 0x50     # "config.ini"
 # O_CESTA: vyrovnávacia pamäť na úplnú cestu k ini (512 B)
-INI_SEKCIA, INI_KLUC, INI_MENO = "Filmy", "NaCeluSirku", "config.ini"
+INI_SEKCIA, INI_KLUC, INI_MENO = "Filmy", "FullWidth", "config.ini"
 # importy KERNEL32
 IMPORTY = ["VirtualProtect", "GetModuleHandleA", "GetModuleFileNameA", "GetPrivateProfileIntA"]
 O_ILT, O_IAT, O_MENA = O_IMPORT + 0x30, O_IMPORT + 0x48, O_IMPORT + 0x60   # 2 deskriptory (40 B) + tabuľky

@@ -26,7 +26,7 @@ CGI filmy sú širokouhlé (napr. úvod 800×363), hra ich kreslí do stredu obr
 - **Zapnutie/vypnutie:** `config.ini` v priečinku hry (vedľa `DDraw.dll`):
   ```ini
   [Filmy]
-  NaCeluSirku=1   ; 1 = filmy na celú šírku, 0 = filmy v rámci 4:3 ako v pôvodnej hre
+  FullWidth=1     ; 1 = filmy na celú šírku, 0 = filmy v rámci 4:3 ako v pôvodnej hre
   ```
   Číta sa pri štarte hry (`GetPrivateProfileIntA`, cesta sa skladá z umiestnenia knižnice cez `GetModuleFileNameA`, takže nezáleží na pracovnom priečinku). Pri 0 sa háky vôbec nevložia. Keď súbor chýba, platí 1. `instaluj.bat` existujúci `config.ini` neprepíše, `obnov.bat` ho zmaže.
   Overené 19. 11. 2026: pri 0 sú v pamäti pôvodné bajty exe, pri 1 aj bez súboru sú háky vložené.
