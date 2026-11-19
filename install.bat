@@ -15,6 +15,8 @@ copy /y "%~dp0dgvoodoo\D3DImm.dll"     "%HRA%\" >nul || goto chyba
 copy /y "%~dp0dgvoodoo\dgVoodoo.conf"  "%HRA%\" >nul || goto chyba
 rem config.ini (zapnutie/vypnutie filmov na celú šírku) – existujúce nastavenie sa neprepíše
 if not exist "%HRA%\config.ini" copy /y "%~dp0dgvoodoo\config.ini" "%HRA%\" >nul || goto chyba
+rem agds.cfg: optimizedraw=0 = hra posiela na obrazovku vždy celú snímku (inak ostávajú zvyšky nápisov a kurzora)
+findstr /i /b "optimizedraw=" "%HRA%\agds.cfg" >nul || (>>"%HRA%\agds.cfg" echo optimizedraw=0) || goto chyba
 rem Pri škálovaní Windows nad 100 % by okno vyšlo väčšie ako obrazovka – hra dostane príznak HIGHDPIAWARE
 reg add "HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" /v "%HRA%\agds.exe" /t REG_SZ /d "~ HIGHDPIAWARE" /f >nul || goto chyba
 echo Hotovo: bezokrajový fullscreen, pomer strán 4:3 a filmy na celú šírku nainštalované do "%HRA%".
