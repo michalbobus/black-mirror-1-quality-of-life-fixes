@@ -23,6 +23,13 @@ CGI filmy sú širokouhlé (napr. úvod 800×363), hra ich kreslí do stredu obr
   - pri načítaní overí bajty v agds.exe a v pamäti vloží 2 skoky: `0x44198e` (štart filmu, po nastavení obdĺžnika) a `0x441fea` (koniec filmu),
   - štart: ak film zaberá celú šírku (ľavý ≤ 0, pravý ≥ 800) a má letterbox (horný > 0), uloží pôvodný výrez a nastaví výrez = obdĺžnik filmu; koniec: vráti pôvodný výrez,
   - iná verzia hry alebo dgVoodoo → nerobí nič (kontrola bajtov exe a hodnôt 800/600 pri výreze).
+- **Zapnutie/vypnutie:** `config.ini` v priečinku hry (vedľa `DDraw.dll`):
+  ```ini
+  [Filmy]
+  NaCeluSirku=1   ; 1 = filmy na celú šírku, 0 = filmy v rámci 4:3 ako v pôvodnej hre
+  ```
+  Číta sa pri štarte hry (`GetPrivateProfileIntA`, cesta sa skladá z umiestnenia knižnice cez `GetModuleFileNameA`, takže nezáleží na pracovnom priečinku). Pri 0 sa háky vôbec nevložia. Keď súbor chýba, platí 1. `instaluj.bat` existujúci `config.ini` neprepíše, `obnov.bat` ho zmaže.
+  Overené 19. 11. 2026: pri 0 sú v pamäti pôvodné bajty exe, pri 1 aj bez súboru sú háky vložené.
 - Znovuzostavenie: `zostav_doplnok.bat`. Pozor: keystone zle počíta rozdiel návestí (`a - b`) a nepozná `rep movsd` – v zdroji sa to obchádza.
 - Pomocné nástroje: `nastroje/rozbor.py` (reťazce, odkazy, disassembly exe), `nastroje/pamat.py` (čítanie/zápis pamäte bežiacej hry, moduly 32-bit procesu).
 
@@ -30,7 +37,7 @@ CGI filmy sú širokouhlé (napr. úvod 800×363), hra ich kreslí do stredu obr
 Hra číta myš zo správ okna (WM_MOUSEMOVE), `GetCursorPos` neimportuje. dgVoodoo drží fyzický kurzor v priestore 800×600 a mapuje ho na zväčšený obraz – v hre to funguje správne. Pri automatickom teste treba `SetCursorPos` volať so súradnicami hry (0–799, 0–599), nie obrazovky.
 
 ## Inštalácia
-- `instaluj.bat` – skopíruje 4 súbory do hry (`dgddraw.dll`, `DDraw.dll`, `D3DImm.dll`, `dgVoodoo.conf`) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
+- `instaluj.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (ten len ak ešte neexistuje) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
 - `obnov.bat` – súbory zmaže a príznak odstráni
 
 ## Overené v hre (19. 11. 2026, 1920×1080, Windows 125 %)

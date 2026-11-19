@@ -10,6 +10,8 @@ Ako to funguje:
     zapíše obdĺžnik filmu do výrezu (DisplayROI) dgVoodoo – dgVoodoo ho potom zväčší so zachovaním
     pomeru strán, teda na celú šírku obrazovky. Pôvodný výrez si uloží.
   * Koniec: vráti pôvodný výrez.
+  * Zapnutie/vypnutie: config.ini vedľa tejto knižnice, [Filmy] NaCeluSirku=1/0 (chýba -> 1).
+    Pri 0 sa háky vôbec nevložia a filmy ostanú v rámci 4:3.
   * Výrez dgVoodoo 2.87.6 je v dgddraw.dll na RVA 0x6c460 (RECT), 0x18 bajtov pred ním šírka a výška
     režimu. Zapisuje sa len vtedy, keď tam je 800 a 600 (iná verzia dgVoodoo -> nerobí nič).
 
@@ -22,14 +24,20 @@ import sys
 import keystone
 
 RVA = 0x1000
-O_KOD, O_DATA, O_IMPORT, O_EXPORT, O_KONIEC = 0x000, 0x400, 0x480, 0x600, 0xA00
+O_KOD, O_DATA, O_IMPORT, O_EXPORT, O_CESTA, O_KONIEC = 0x000, 0x400, 0x480, 0x600, 0xA00, 0xC00
 # dáta
 O_AKTIVNY = O_DATA            # adresa RECT v dgVoodoo počas filmu, inak 0
 O_ULOZENY = O_DATA + 4        # pôvodný RECT (16 B)
 O_DGMENO = O_DATA + 0x20      # "dgddraw.dll"
-# importy KERNEL32: VirtualProtect, GetModuleHandleA
-O_ILT, O_IAT, O_MENA = O_IMPORT + 0x30, O_IMPORT + 0x40, O_IMPORT + 0x50   # 2 deskriptory (40 B) + tabuľky
-O_IAT_VP, O_IAT_GMH = O_IAT, O_IAT + 4
+O_SEKCIA = O_DATA + 0x30      # "Filmy"
+O_KLUC = O_DATA + 0x40        # "NaCeluSirku"
+O_INIMENO = O_DATA + 0x50     # "config.ini"
+# O_CESTA: vyrovnávacia pamäť na úplnú cestu k ini (512 B)
+INI_SEKCIA, INI_KLUC, INI_MENO = "Filmy", "NaCeluSirku", "config.ini"
+# importy KERNEL32
+IMPORTY = ["VirtualProtect", "GetModuleHandleA", "GetModuleFileNameA", "GetPrivateProfileIntA"]
+O_ILT, O_IAT, O_MENA = O_IMPORT + 0x30, O_IMPORT + 0x48, O_IMPORT + 0x60   # 2 deskriptory (40 B) + tabuľky
+O_IAT_VP, O_IAT_GMH, O_IAT_GMFN, O_IAT_GPPI = (O_IAT + 4 * i for i in range(4))
 
 CIEL = "dgddraw"
 EXPORTY = ["AcquireDDThreadLock", "CompleteCreateSysmemSurface", "D3DParseUnknownCommand", "DDInternalLock",
@@ -52,6 +60,40 @@ dllmain:
     call dm_tu
 dm_tu:
     pop ebx
+    mov esi, dword ptr [esp + 36]
+    push 260
+    lea edi, [ebx + {CESTA}]
+    push edi
+    push esi
+    call dword ptr [ebx + {IAT_GMFN}]
+    test eax, eax
+    jz dm_hacky
+    lea ecx, [edi + eax]
+dm_lomka:
+    dec ecx
+    cmp ecx, edi
+    jb dm_hacky
+    cmp byte ptr [ecx], 0x5c
+    jne dm_lomka
+    inc ecx
+    mov edi, ecx
+    lea esi, [ebx + {INIMENO}]
+dm_kopia:
+    lodsb
+    stosb
+    test al, al
+    jnz dm_kopia
+    lea eax, [ebx + {CESTA}]
+    push eax
+    push 1
+    lea eax, [ebx + {KLUC}]
+    push eax
+    lea eax, [ebx + {SEKCIA}]
+    push eax
+    call dword ptr [ebx + {IAT_GPPI}]
+    test eax, eax
+    jz dm_koniec
+dm_hacky:
     cmp dword ptr [0x44198e], 0x51343d83
     jne dm_koniec
     cmp dword ptr [0x441fea], 0x83ec8b55
@@ -161,7 +203,9 @@ ko_von:
     ret
 """
 
-POSUNY = {"IAT_VP": O_IAT_VP, "IAT_GMH": O_IAT_GMH, "DGMENO": O_DGMENO, "AKTIVNY": O_AKTIVNY, "ULOZENY": O_ULOZENY}
+POSUNY = {"IAT_VP": O_IAT_VP, "IAT_GMH": O_IAT_GMH, "IAT_GMFN": O_IAT_GMFN, "IAT_GPPI": O_IAT_GPPI,
+          "DGMENO": O_DGMENO, "AKTIVNY": O_AKTIVNY, "ULOZENY": O_ULOZENY,
+          "SEKCIA": O_SEKCIA, "KLUC": O_KLUC, "INIMENO": O_INIMENO, "CESTA": O_CESTA}
 
 
 def preloz():
@@ -197,18 +241,23 @@ def zostav():
     assert len(kod) <= O_DATA, len(kod)
     s = bytearray(O_KONIEC)
     s[O_KOD:O_KOD + len(kod)] = kod
-    meno = (CIEL + ".dll\0").encode()
-    s[O_DGMENO:O_DGMENO + len(meno)] = meno
+    for o, t in ((O_DGMENO, CIEL + ".dll"), (O_SEKCIA, INI_SEKCIA), (O_KLUC, INI_KLUC), (O_INIMENO, INI_MENO)):
+        b = (t + "\0").encode()
+        assert len(b) <= 0x10
+        s[o:o + len(b)] = b
 
-    # import KERNEL32.dll: VirtualProtect, GetModuleHandleA
-    n1, n2 = O_MENA, O_MENA + 0x14
-    s[n1:n1 + 17] = b"\0\0VirtualProtect\0"
-    s[n2:n2 + 19] = b"\0\0GetModuleHandleA\0"
-    dllm = O_MENA + 0x30
+    # import KERNEL32.dll (hint 0 + meno)
+    p, mena = O_MENA, []
+    for f in IMPORTY:
+        b = b"\0\0" + f.encode() + b"\0"
+        mena.append(p); s[p:p + len(b)] = b; p += (len(b) + 1) & ~1
+    dllm = p
     s[dllm:dllm + 13] = b"KERNEL32.dll\0"
+    assert dllm + 13 <= O_EXPORT and O_ILT + 4 * len(IMPORTY) + 4 <= O_IAT and O_IAT + 4 * len(IMPORTY) + 4 <= O_MENA
     struct.pack_into("<IIIII", s, O_IMPORT, RVA + O_ILT, 0, 0, RVA + dllm, RVA + O_IAT)
-    struct.pack_into("<III", s, O_ILT, RVA + n1, RVA + n2, 0)
-    struct.pack_into("<III", s, O_IAT, RVA + n1, RVA + n2, 0)
+    for i, m in enumerate(mena):
+        struct.pack_into("<I", s, O_ILT + 4 * i, RVA + m)
+        struct.pack_into("<I", s, O_IAT + 4 * i, RVA + m)
 
     # export: všetko ako forwarder "dgddraw.Meno"
     n = len(EXPORTY)
@@ -224,7 +273,7 @@ def zostav():
         b = (e + "\0").encode(); adr_mien.append(p); s[p:p + len(b)] = b; p += len(b)
         b = (f"{CIEL}.{e}\0").encode(); adr_fw.append(p); s[p:p + len(b)] = b; p += len(b)
     exp_dlzka = p - O_EXPORT
-    assert p <= O_KONIEC
+    assert p <= O_CESTA
     assert EXPORTY == sorted(EXPORTY)
     struct.pack_into("<IIHHIIIIIII", s, O_EXPORT, 0, 0, 0, 0, RVA + meno_dll, 1, n, n,
                      RVA + o_fn, RVA + o_mena, RVA + o_ord)
@@ -235,7 +284,7 @@ def zostav():
     # prázdna tabuľka presunov (kód je nezávislý od polohy) – knižnica sa dá načítať kamkoľvek
     o_rel = (p + 3) & ~3
     struct.pack_into("<IIHH", s, o_rel, 0, 12, 0, 0)
-    assert o_rel + 12 <= O_KONIEC
+    assert o_rel + 12 <= O_CESTA
 
     surove = (len(s) + 0x1FF) & ~0x1FF
     virt = (len(s) + 0xFFF) & ~0xFFF
@@ -252,7 +301,7 @@ def zostav():
     struct.pack_into("<II", h, o + 96 + 8 * 0, RVA + O_EXPORT, exp_dlzka)   # export
     struct.pack_into("<II", h, o + 96 + 8 * 1, RVA + O_IMPORT, 40)          # import
     struct.pack_into("<II", h, o + 96 + 8 * 5, RVA + o_rel, 12)             # presuny
-    struct.pack_into("<II", h, o + 96 + 8 * 12, RVA + O_IAT, 12)            # IAT
+    struct.pack_into("<II", h, o + 96 + 8 * 12, RVA + O_IAT, 4 * len(IMPORTY) + 4)            # IAT
     sek = o + 0xE0
     h[sek:sek + 8] = b".text\0\0\0"
     struct.pack_into("<IIIIIIHHI", h, sek + 8, len(s), RVA, surove, 0x200, 0, 0, 0, 0, 0xE0000060)
