@@ -19,7 +19,12 @@ Ako to funguje:
   * Spolu s kurzorom: 0x402fa1 – plánovanie tiku. Hra po čakaní nastaví „posledný tik = teraz“, takže každé
     oneskorenie (napr. zobrazenie čakajúce na vsync) hru natrvalo spomalí. Hák nastaví „posledný = plánovaný čas“
     (oneskorenie sa dorovná pri ďalšom tiku); ak je oneskorenie aspoň 1 tik (načítanie a pod.), použije „teraz“. Pozor: bez videomem=0 v agds.cfg trvá prekreslenie ~33 ms a hru spomalí.
-    Fps=0 -> háky kurzora a plánovania tiku sa nevložia.
+    Fps=0 -> prekresľovanie a hák plánovania tiku sa nevložia.
+  * [Cursor] Sensitivity=0.5 (0.1..1.0): násobok pohybu myši, 1.0 = ako pôvodná hra. V tom istom háku (0x43cfee)
+    sa pri každom volaní porovná GetCursorPos s naposledy nastavenou polohou, rozdiel sa vynásobí citlivosťou
+    (presnosť 1/1000 px, zlomky sa zachovajú) a kurzor sa presunie SetCursorPos. Len keď je hra v popredí
+    (GetForegroundWindow = okno hry 0x5850e8). Poloha sa znova načíta bez násobenia, keď hru presunie kurzor sama
+    (hák na jej SetCursorPos v 0x43d203), po návrate do hry a po pauze dlhšej ako 5 tikov.
 
 Použitie:  python zostav_dll.py VYSTUP.dll
 """
@@ -30,7 +35,7 @@ import sys
 import keystone
 
 RVA = 0x1000
-O_KOD, O_DATA, O_IMPORT, O_EXPORT, O_CESTA, O_KONIEC = 0x000, 0x800, 0x900, 0xB00, 0xF00, 0x1100
+O_KOD, O_DATA, O_IMPORT, O_EXPORT, O_CESTA, O_KONIEC = 0x000, 0x800, 0xA00, 0xC00, 0x1000, 0x1200
 
 # dáta (posuny od O_DATA)
 DATA = {
@@ -46,20 +51,30 @@ DATA = {
     "POCET": 0x4C,       # počet prekreslení kurzora mimo tiku (na meranie)
     "LIMIT": 0x50,       # QPC tiky od začiatku tiku, po ktorých sa už kurzor neprekresľuje (1/25 s - 2 ms)
     "TIK": 0x54,         # QPC tiky jedného tiku logiky (1/25 s)
+    "CITL": 0x58,        # citlivosť v tisícinách (100..1000), 1000 = bez zmeny
+    "RESYNC": 0x5C,      # 1 = znova načítať polohu kurzora (hra ho presunula, návrat do hry...)
+    "VX": 0xC0, "VY": 0xC4,              # poloha kurzora v tisícinách pixela
+    "LX": 0xC8, "LY": 0xCC,              # naposledy nastavená poloha kurzora (pixely)
+    "CB": 0xD0, "CB4": 0xD4,             # GetCursorPos pre citlivosť
+    "POSLV": 0xD8, "POSLV4": 0xDC,       # QPC posledného volania háku
+    "TEXT": 0xE0,                        # text hodnoty Sensitivity (32 B)
+    "K_SENS": 0x100, "D_SENS": 0x110,
     "DGMENO": 0x60,      # "dgddraw.dll"
     "S_MOVIES": 0x70, "K_FULLWIDTH": 0x80, "S_CURSOR": 0x90, "K_FPS": 0xA0, "INIMENO": 0xB0,
 }
 RETAZCE = {"DGMENO": "dgddraw.dll", "S_MOVIES": "Movies", "K_FULLWIDTH": "FullWidth",
-           "S_CURSOR": "Cursor", "K_FPS": "Fps", "INIMENO": "config.ini"}
+           "S_CURSOR": "Cursor", "K_FPS": "Fps", "INIMENO": "config.ini",
+           "K_SENS": "Sensitivity", "D_SENS": "0.5"}
 
 IMPORTY = {
     "KERNEL32.dll": ["VirtualProtect", "GetModuleHandleA", "GetModuleFileNameA", "GetPrivateProfileIntA",
-                     "QueryPerformanceCounter", "QueryPerformanceFrequency"],
-    "USER32.dll": ["GetCursorPos"],
+                     "QueryPerformanceCounter", "QueryPerformanceFrequency", "GetPrivateProfileStringA"],
+    "USER32.dll": ["GetCursorPos", "SetCursorPos", "GetForegroundWindow"],
 }
 IAT_MENA = {"VirtualProtect": "IAT_VP", "GetModuleHandleA": "IAT_GMH", "GetModuleFileNameA": "IAT_GMFN",
             "GetPrivateProfileIntA": "IAT_GPPI", "QueryPerformanceCounter": "IAT_QPC",
-            "QueryPerformanceFrequency": "IAT_QPF", "GetCursorPos": "IAT_GCP"}
+            "QueryPerformanceFrequency": "IAT_QPF", "GetCursorPos": "IAT_GCP",
+            "GetPrivateProfileStringA": "IAT_GPPS", "SetCursorPos": "IAT_SCP", "GetForegroundWindow": "IAT_GFW"}
 
 CIEL = "dgddraw"
 EXPORTY = ["AcquireDDThreadLock", "CompleteCreateSysmemSurface", "D3DParseUnknownCommand", "DDInternalLock",
@@ -149,8 +164,85 @@ dm_kurzor:
     push eax
     call dword ptr [ebx + {IAT_GPPI}]
     test eax, eax
-    jle dm_ochrana
+    jg dm_fps_ok
+    xor eax, eax
+dm_fps_ok:
     mov dword ptr [ebx + {FPS}], eax
+
+    lea eax, [ebx + {CESTA}]
+    push eax
+    push 32
+    lea eax, [ebx + {TEXT}]
+    push eax
+    lea eax, [ebx + {D_SENS}]
+    push eax
+    lea eax, [ebx + {K_SENS}]
+    push eax
+    lea eax, [ebx + {S_CURSOR}]
+    push eax
+    call dword ptr [ebx + {IAT_GPPS}]
+    lea esi, [ebx + {TEXT}]
+    xor eax, eax
+    xor edi, edi
+dm_cele:
+    movzx ecx, byte ptr [esi]
+    sub ecx, 0x30
+    cmp ecx, 9
+    ja dm_bodka
+    imul eax, eax, 10
+    add eax, ecx
+    inc esi
+    inc edi
+    jmp dm_cele
+dm_bodka:
+    imul eax, eax, 1000
+    movzx ecx, byte ptr [esi]
+    cmp ecx, 0x2e
+    je dm_desat
+    cmp ecx, 0x2c
+    jne dm_cislo
+dm_desat:
+    inc esi
+    mov edx, 100
+dm_desat_c:
+    movzx ecx, byte ptr [esi]
+    sub ecx, 0x30
+    cmp ecx, 9
+    ja dm_cislo
+    imul ecx, edx
+    add eax, ecx
+    inc edi
+    inc esi
+    push eax
+    mov eax, edx
+    xor edx, edx
+    mov ecx, 10
+    div ecx
+    mov edx, eax
+    pop eax
+    test edx, edx
+    jnz dm_desat_c
+dm_cislo:
+    test edi, edi
+    jnz dm_citl_rozsah
+    mov eax, 500
+dm_citl_rozsah:
+    cmp eax, 100
+    jge dm_citl_min
+    mov eax, 100
+dm_citl_min:
+    cmp eax, 1000
+    jle dm_citl_max
+    mov eax, 1000
+dm_citl_max:
+    mov dword ptr [ebx + {CITL}], eax
+    mov dword ptr [ebx + {RESYNC}], 1
+
+    cmp dword ptr [ebx + {FPS}], 0
+    jne dm_hak_kurzor
+    cmp dword ptr [ebx + {CITL}], 1000
+    jge dm_ochrana
+dm_hak_kurzor:
     cmp dword ptr [0x43cfee], 0x6aec8b55
     jne dm_ochrana
     cmp dword ptr [0x43cff2], 0x08458b00
@@ -162,13 +254,6 @@ dm_kurzor:
     jz dm_ochrana
     mov eax, dword ptr [ebx + {FREKV}]
     mov edx, dword ptr [ebx + {FREKV4}]
-    mov ecx, dword ptr [ebx + {FPS}]
-    cmp edx, ecx
-    jae dm_ochrana
-    div ecx
-    mov dword ptr [ebx + {PERIODA}], eax
-    mov eax, dword ptr [ebx + {FREKV}]
-    mov edx, dword ptr [ebx + {FREKV4}]
     mov ecx, 500
     cmp edx, ecx
     jae dm_ochrana
@@ -177,16 +262,40 @@ dm_kurzor:
     mov dword ptr [ebx + {TIK}], ecx
     imul eax, eax, 19
     mov dword ptr [ebx + {LIMIT}], eax
-    mov eax, dword ptr [ebx + {PERIODA}]
+    mov ecx, dword ptr [ebx + {FPS}]
+    test ecx, ecx
+    jz dm_bez_fps
+    mov eax, dword ptr [ebx + {FREKV}]
+    mov edx, dword ptr [ebx + {FREKV4}]
+    cmp edx, ecx
+    jae dm_ochrana
+    div ecx
     lea eax, [eax + eax * 2]
     shr eax, 2
     mov dword ptr [ebx + {PERIODA}], eax
+dm_bez_fps:
     mov dword ptr [ebx + {BODST}], 0xffffffff
     mov dword ptr [ebx + {BODST4}], 0xffffffff
     mov byte ptr [0x43cfee], 0xe9
     lea eax, [ebx + {KURZOR}]
     sub eax, 0x43cff3
     mov dword ptr [0x43cfef], eax
+
+    cmp dword ptr [ebx + {CITL}], 1000
+    jge dm_tik
+    cmp dword ptr [0x43d203], 0x528015ff
+    jne dm_tik
+    cmp word ptr [0x43d207], 0x0048
+    jne dm_tik
+    mov byte ptr [0x43d203], 0xe8
+    lea eax, [ebx + {SYNCHAK}]
+    sub eax, 0x43d208
+    mov dword ptr [0x43d204], eax
+    mov byte ptr [0x43d208], 0x90
+
+dm_tik:
+    cmp dword ptr [ebx + {FPS}], 0
+    je dm_ochrana
     cmp dword ptr [0x402fa1], 0x49bda8a1
     jne dm_ochrana
     cmp dword ptr [0x402fa5], 0xbda0a300
@@ -288,6 +397,98 @@ ku_tu:
     lea eax, [ebx + {TERAZ}]
     push eax
     call dword ptr [ebx + {IAT_QPC}]
+
+    mov eax, dword ptr [ebx + {TERAZ}]
+    mov edx, dword ptr [ebx + {TERAZ4}]
+    sub eax, dword ptr [ebx + {POSLV}]
+    sbb edx, dword ptr [ebx + {POSLV4}]
+    mov ecx, dword ptr [ebx + {TERAZ}]
+    mov dword ptr [ebx + {POSLV}], ecx
+    mov ecx, dword ptr [ebx + {TERAZ4}]
+    mov dword ptr [ebx + {POSLV4}], ecx
+    cmp dword ptr [ebx + {CITL}], 1000
+    jge ku_fps
+    test edx, edx
+    jnz ku_cs_sync
+    mov ecx, dword ptr [ebx + {TIK}]
+    lea ecx, [ecx + ecx * 4]
+    cmp eax, ecx
+    jae ku_cs_sync
+    call dword ptr [ebx + {IAT_GFW}]
+    cmp eax, dword ptr [0x5850e8]
+    jne ku_cs_sync
+    lea eax, [ebx + {CB}]
+    push eax
+    call dword ptr [ebx + {IAT_GCP}]
+    test eax, eax
+    jz ku_fps
+    cmp dword ptr [ebx + {RESYNC}], 0
+    jne ku_cs_nacitaj
+    mov ecx, dword ptr [ebx + {CB}]
+    sub ecx, dword ptr [ebx + {LX}]
+    mov esi, dword ptr [ebx + {CB4}]
+    sub esi, dword ptr [ebx + {LY}]
+    mov eax, ecx
+    or eax, esi
+    jz ku_fps
+    imul ecx, dword ptr [ebx + {CITL}]
+    add ecx, dword ptr [ebx + {VX}]
+    jge ku_cs_x0
+    xor ecx, ecx
+ku_cs_x0:
+    cmp ecx, 799999
+    jle ku_cs_x1
+    mov ecx, 799999
+ku_cs_x1:
+    mov dword ptr [ebx + {VX}], ecx
+    imul esi, dword ptr [ebx + {CITL}]
+    add esi, dword ptr [ebx + {VY}]
+    jge ku_cs_y0
+    xor esi, esi
+ku_cs_y0:
+    cmp esi, 599999
+    jle ku_cs_y1
+    mov esi, 599999
+ku_cs_y1:
+    mov dword ptr [ebx + {VY}], esi
+    mov eax, ecx
+    xor edx, edx
+    mov ecx, 1000
+    div ecx
+    mov edi, eax
+    mov eax, esi
+    xor edx, edx
+    div ecx
+    mov dword ptr [ebx + {LX}], edi
+    mov dword ptr [ebx + {LY}], eax
+    cmp edi, dword ptr [ebx + {CB}]
+    jne ku_cs_nastav
+    cmp eax, dword ptr [ebx + {CB4}]
+    je ku_fps
+ku_cs_nastav:
+    push eax
+    push edi
+    call dword ptr [ebx + {IAT_SCP}]
+    jmp ku_fps
+ku_cs_sync:
+    mov dword ptr [ebx + {RESYNC}], 1
+    jmp ku_fps
+ku_cs_nacitaj:
+    mov eax, dword ptr [ebx + {CB}]
+    mov dword ptr [ebx + {LX}], eax
+    imul eax, eax, 1000
+    add eax, 500
+    mov dword ptr [ebx + {VX}], eax
+    mov eax, dword ptr [ebx + {CB4}]
+    mov dword ptr [ebx + {LY}], eax
+    imul eax, eax, 1000
+    add eax, 500
+    mov dword ptr [ebx + {VY}], eax
+    mov dword ptr [ebx + {RESYNC}], 0
+
+ku_fps:
+    cmp dword ptr [ebx + {FPS}], 0
+    je ku_von
     mov eax, dword ptr [ebx + {TERAZ}]
     mov edx, dword ptr [ebx + {TERAZ4}]
     sub eax, dword ptr [ebx + {POSLEDNY}]
@@ -401,9 +602,18 @@ ti_von:
     mov ecx, dword ptr [0x49bdac]
     push 0x402fb7
     ret
+
+synchak:
+    pushad
+    call sy_tu
+sy_tu:
+    pop ebx
+    mov dword ptr [ebx + {RESYNC}], 1
+    popad
+    jmp dword ptr [0x485280]
 """
 
-BLOKY = ["dm_tu", "st_tu", "ko_tu", "ku_tu", "ti_tu"]
+BLOKY = ["dm_tu", "st_tu", "ko_tu", "ku_tu", "ti_tu", "sy_tu"]
 
 
 def rozlozenie_importov():
@@ -439,7 +649,7 @@ def preloz():
         posuny["CESTA"] = O_CESTA
         # vstupy hákov = 6 bajtov pred návestím *_tu (pushad + call)
         posuny.update(START=bloky["st_tu"] - 6, KONIEC=bloky["ko_tu"] - 6, KURZOR=bloky["ku_tu"] - 6,
-                      TIKHAK=bloky["ti_tu"] - 6)
+                      TIKHAK=bloky["ti_tu"] - 6, SYNCHAK=bloky["sy_tu"] - 6)
         riadky, aktualne = [], None
         for r in KOD.splitlines():
             s = r.strip()

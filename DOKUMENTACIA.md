@@ -69,6 +69,23 @@ Chôdza postavy (hala, 2 trasy, 3×): bez pohybu myši 3,95 / 3,35 s, s krúžia
 
 Počítadlo prekreslení navyše: DDraw.dll + 0x1000 + 0x800 + 0x4C (na meranie, `nastroje/pamat.py`).
 
+## Citlivosť kurzora (config.ini [Cursor] Sensitivity)
+`Sensitivity=0.5` (predvolené), rozsah 0.1–1.0 (mimo rozsahu sa orezá, nečitateľná hodnota = 0.5; desatinná bodka aj čiarka). Násobok pohybu myši: 1.0 = rýchlosť pôvodnej hry.
+- V tom istom háku 0x43cfee: pri každom volaní (stovky za sekundu počas čakania na tik) porovná `GetCursorPos` s naposledy nastavenou polohou, rozdiel vynásobí citlivosťou (počíta v tisícinách pixela, zlomky sa nestrácajú) a presunie kurzor `SetCursorPos`.
+- Iba keď je hra v popredí (`GetForegroundWindow` = okno hry `[0x5850e8]`).
+- Polohu načíta znova bez násobenia: keď kurzor presunie hra sama (hák na jej `SetCursorPos` v 0x43d203, 6 B `call [0x485280]` → `call` do doplnku + `nop`), po návrate do hry a po pauze dlhšej ako 5 tikov (načítanie, film).
+- Pri `Sensitivity=1.0` sa citlivosť nespracúva vôbec a hák 0x43d203 sa nevkladá; pri `Fps=0` a `Sensitivity=1.0` sa nevkladá ani hák 0x43cfee.
+
+Meranie (19. 11. 2026, hlavná ponuka, relatívny pohyb cez `SendInput` vrátane akcelerácie Windows, posun kurzora v px hry):
+| Fps | Sensitivity | 160 mickey pomaly | 180 mickey rýchlo |
+|---|---|---|---|
+| 0 (pôvodná hra) | 1.0 | 164–165 | 461–462 |
+| 60 | 1.0 | 165 | 461 |
+| 60 | 0.5 | 80–81 | 230 |
+| 0 | 0.5 | 83 | 230–231 |
+
+Plynulý kurzor rýchlosť nemení (Fps 60 = pôvodná hra), citlivosť 0.5 presne polovičná.
+
 ## Inštalácia
 - `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (ten len ak ešte neexistuje) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
 - `uninstall.bat` – súbory zmaže a príznak odstráni
