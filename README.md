@@ -23,11 +23,11 @@
 | **ESC** v ponuke | návrat do hry (zo Nastavení, Uložit/Nahrát hru a Tvůrci späť do hlavnej ponuky) |
 | **F5** | obrazovka Uložit hru (ESC vráti rovno do hry) |
 | **F8** | obrazovka Nahrát hru (ESC vráti rovno do hry) |
-| **medzerník** (podržaný) v hre | ukáže všetky aktívne miesta v scéne: východy ikonou dverí, ostatné miesta krúžkom |
+| **medzerník** v hre | na 2 sekundy (ako Tab, pri držaní stále) ukáže všetky aktívne miesta v scéne: východy ikonou dverí, ostatné miesta krúžkom |
 | **medzerník** počas rozhovoru | preskočí jednu repliku (aj vetu rozprávača) |
 | **ESC** počas rozhovoru | preskočí repliku aj všetky animácie a hudbu po nej až po ďalšiu repliku |
 | **ESC** podržaný počas rozhovoru | preskočí celý rozhovor až po chvíľu, keď znova ovládaš hru |
-| **Tab** | ukáže východy (pôvodná funkcia hry) |
+| **Tab** | na 2 sekundy ukáže východy (pôvodná funkcia hry) |
 
 Počas rozhovorov už ostatné klávesy (napríklad písmená) repliky nepreskakujú – v pôvodnej hre to robil ktorýkoľvek kláves.
 
@@ -49,7 +49,7 @@ Vyhladzujú sa len postavy v scéne. Titulky, názvy predmetov a ponuky ostávaj
 
 ![Titulky bez zmeny](snimky/readme/titulky.png)
 
-### Aktívne miesta (podržaný medzerník)
+### Aktívne miesta (medzerník)
 ![Hotspoty](snimky/readme/hotspoty.png)
 
 ### Filmy na celú šírku

@@ -168,6 +168,9 @@ static void schovaj_kolieska(void)
 }
 
 static int rec_bezi(void);
+/* Značky sa po stlačení medzerníka ukážu na rovnaký čas ako ikony tabulátora: 2,04 s = 50 tikov (zmerané). */
+#define TIKY_HOTSPOTOV 50
+static unsigned pocet_tikov, hotspoty_do;
 
 /* ---------- hotspoty (medzerník) ---------- */
 /* Značky sú animácie scény (zoznam scéna+0x80, ako kurzor), takže ich hra kreslí sama – pod kurzor (poradie −9,
@@ -255,7 +258,7 @@ static void znacky_tik(void)
 {
     unsigned char *s = SCENA;
     if (!s) return;
-    int chce = cfg_hotspoty && drzi(VK_SPACE) && hra_v_scene() && !rec_bezi();
+    int chce = cfg_hotspoty && pocet_tikov < hotspoty_do && hra_v_scene() && !rec_bezi();
     if (chce) zbieraj_hotspoty(); else pocet_hotspotov = 0;
     unsigned char *nase[MAX_HOTSPOTOV * 2];
     int n = najdi_znacky(s, nase, MAX_HOTSPOTOV * 2);
@@ -542,6 +545,7 @@ static int prvy_tik = 1;
 static int __cdecl hra_tik(void)
 {
     ladenie.udalosti[0]++;
+    pocet_tikov++;
     ladenie_tik();
     if (prvy_tik) { prvy_tik = 0; obnov_nastavenia("start"); }
     if (esc_ziadost) { esc_ziadost = 0; if (hra_v_scene()) otvor_ponuku(); }
@@ -560,7 +564,10 @@ static void __cdecl klaves_dole(WPARAM w, LPARAM l)
     ladenie.udalosti[1] = (int)w;
     loguj("klaves %x opak %d scena %s pouz %d", (int)w, opakovanie, SCENA ? (char *)SCENA : "-", POUZIVATEL_POVOLENY());
     if (w == VK_ESCAPE && cfg_esc_ponuka && hra_v_scene()) { if (!opakovanie) esc_ziadost = 1; return; }
-    if (w == VK_SPACE && cfg_hotspoty && hra_v_scene() && !rec_bezi()) return;   /* hotspoty sa zbierajú v tiku */
+    if (w == VK_SPACE && cfg_hotspoty && hra_v_scene() && !rec_bezi()) {   /* hotspoty sa zbierajú v tiku */
+        hotspoty_do = pocet_tikov + TIKY_HOTSPOTOV;      /* ako tabulátor; opakovanie pri držaní predlžuje */
+        return;
+    }
     if (cfg_preskakovanie && bez_kontroly()) {
         /* rozhovor / animácia: ESC = preskočenie repliky + pretáčanie po ďalšiu repliku, medzerník = len jedna
          * replika (bez opakovania pri držaní), ostatné klávesy nič (hra by nimi tiež preskakovala repliky) */

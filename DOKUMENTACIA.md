@@ -104,7 +104,7 @@ Háky (v pamäti, pred zápisom sa overia pôvodné bajty; iná verzia exe → n
 ```ini
 [Controls]
 EscapeMenu=1      ; ESC v hre = ponuka
-SpaceHotspots=1   ; podržaný medzerník = hotspoty
+SpaceHotspots=1   ; medzerník = hotspoty na 2 s (ako tabulátor)
 HoldToSkip=1      ; ESC/medzerník v rozhovore = preskočenie po ďalšiu repliku (aj animácie, hudba)
 SaveLoadKeys=1    ; F5 = uložiť, F8 = nahrať
 WheelInventory=1  ; koliesko = predmety inventára
@@ -128,9 +128,11 @@ Obrazovky: `1006.100e` hlavná ponuka, `1006.1037` Nastavení, `1006.101b` nahr�
 Zoznam objektov scény: kruhový zoznam `scéna+0x40` (prvý `[+0x28]`, ďalší `[objekt+0]`). Objekt: meno `+8`, aktívny `+0x34`, poradie `+0x2c`, región `+0x72`, názov (text pri prejdení myšou) `+0x7a`, obsluha use `+0xb5`, posuny `+0x3a/+0x3e/+0x42/+0x46`, animácia `+0x7e`, postava `+0x82`, klávesové obsluhy `+0xe1` (východy: tabulátor), ďalšia obsluha `+0xd1` (len východy). Región: stred `(+0, +2)` (short), ohraničenie x `+0xA..+0xC`, y `+0xE..+0x10`. Hit-test 0x4034b0 (x, y, scéna, 0) → objekt pod kurzorom (`scéna+0x5ed`).
 Hotspot = aktívny objekt s regiónom a neprázdnym názvom, okrem `inv.*` a predmetu na kurzore; poloha = stred regiónu prepočítaný opačne ako v hit-teste.
 
-**Tabulátor (natívne):** východy majú vlastnú obsluhu klávesu Tab – skript k objektu pripojí animáciu `kurzor_dvere.flc` (ikona dverí 24×32) na stred regiónu (`+0x7e`, posun `+0x42/+0x46`) a asi po 2,5 s ju odstráni. Hra stav klávesu nesleduje (GetKeyboardState len pri WM_KEYDOWN).
+**Tabulátor (natívne):** východy majú vlastnú obsluhu klávesu Tab – skript k objektu pripojí animáciu `kurzor_dvere.flc` (ikona dverí 24×32) na stred regiónu (`+0x7e`, posun `+0x42/+0x46`) a asi po 2,5 s ju odstráni. Hra stav klávesu nesleduje (GetKeyboardState len pri WM_KEYDOWN). Zmerané: ikona je vidno 2,04 s po stlačení (50 tikov); pri držaní ju predlžuje automatické opakovanie klávesu.
 
-**Značky ako animácie scény:** zoznam animácií `scéna+0x80` (prvá `[+0x28]`, ďalšia `[a+0]`; animácia: poradie `+0xC`, š/v `+0x10/+0x14`, x/y `+0x1C/+0x20` v súradniciach scény, pixely `+0x24`, meno `+0x41`, postava `+0x61`, vlastník `+0x71`; `nastroje/animacie.py`). Kurzor je animácia „mouse pic“ s poradím −10. Doplnok počas držania medzerníka vytvára vlastné animácie `0x406932(scéna, šablóna, −9, 0, "bmqol_hotspot")` – hra ich kreslí sama **pod kurzor** a sama prekresľuje; po pustení ich odstráni `0x406b31(scéna, &animácia)` (odstráni uzol, označí oblasť na prekreslenie, pixely šablóny nemení). Animácie sa hľadajú podľa mena, takže sa odstránia aj po návrate do scény z ponuky.
+**Čas zobrazenia značiek** je rovnaký: každé stlačenie medzerníka (aj automatické opakovanie pri držaní) nastaví koniec na aktuálny tik + 50. Zmerané: jedno stlačenie 1,9 s; držanie 4 s → značky do 6,0 s (2 s po pustení), ako tabulátor.
+
+**Značky ako animácie scény:** zoznam animácií `scéna+0x80` (prvá `[+0x28]`, ďalšia `[a+0]`; animácia: poradie `+0xC`, š/v `+0x10/+0x14`, x/y `+0x1C/+0x20` v súradniciach scény, pixely `+0x24`, meno `+0x41`, postava `+0x61`, vlastník `+0x71`; `nastroje/animacie.py`). Kurzor je animácia „mouse pic“ s poradím −10. Doplnok po stlačení medzerníka vytvára vlastné animácie `0x406932(scéna, šablóna, −9, 0, "bmqol_hotspot")` – hra ich kreslí sama **pod kurzor** a sama prekresľuje; po uplynutí času ich odstráni `0x406b31(scéna, &animácia)` (odstráni uzol, označí oblasť na prekreslenie, pixely šablóny nemení). Animácie sa hľadajú podľa mena, takže sa odstránia aj po návrate do scény z ponuky.
 Šablóna obrázka (29 B): šírka, výška, bity (32), x, y, ukazovateľ na pixely, typ. Pixely 4 B: B, G, R, 100; purpurová (255, 0, 255) = priehľadná. Ikona východu sa načíta `0x444f66(&šablóna, "kurzor_dvere.flc")` (ako ju načítava hra), krúžok (21×21, svetlá zlatá s tmavým lemom) má vlastné pixely.
 Východ = objekt s klávesovými obsluhami (`+0xe1` ≠ 0) → ikona dverí; ostatné → krúžok. Animácie sa prerobia len pri zmene zoznamu alebo polohy značiek. Overené v hale: 5 východov s dverami (zhodne s tabulátorom), obraz, tabuľka a stolík s krúžkom; kurzor je nad značkou; po pustení v scéne nezostane žiadna naša animácia. Nad východom sa kurzor sám mení na dvere (pôvodné správanie hry).
 Počas reči (obsadený kanál so vzorkou repliky 0x49ef58) medzerník hotspoty neukazuje a preskakuje repliku.
