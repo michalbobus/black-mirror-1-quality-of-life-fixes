@@ -20,7 +20,7 @@ Ako to funguje:
     oneskorenie (napr. zobrazenie čakajúce na vsync) hru natrvalo spomalí. Hák nastaví „posledný = plánovaný čas“
     (oneskorenie sa dorovná pri ďalšom tiku); ak je oneskorenie aspoň 1 tik (načítanie a pod.), použije „teraz“. Pozor: bez videomem=0 v agds.cfg trvá prekreslenie ~33 ms a hru spomalí.
     Fps=0 -> prekresľovanie a hák plánovania tiku sa nevložia.
-  * [Cursor] Sensitivity=0.5 (0.1..1.0): násobok pohybu myši, 1.0 = ako pôvodná hra. V tom istom háku (0x43cfee)
+  * [Cursor] Sensitivity=0.7 (0.1..1.0): násobok pohybu myši, 1.0 = ako pôvodná hra. V tom istom háku (0x43cfee)
     sa pri každom volaní porovná GetCursorPos s naposledy nastavenou polohou, rozdiel sa vynásobí citlivosťou
     (presnosť 1/1000 px, zlomky sa zachovajú) a kurzor sa presunie SetCursorPos. Len keď je hra v popredí
     (GetForegroundWindow = okno hry 0x5850e8). Poloha sa znova načíta bez násobenia, keď hru presunie kurzor sama
@@ -64,7 +64,7 @@ DATA = {
 }
 RETAZCE = {"DGMENO": "dgddraw.dll", "S_MOVIES": "Movies", "K_FULLWIDTH": "FullWidth",
            "S_CURSOR": "Cursor", "K_FPS": "Fps", "INIMENO": "config.ini",
-           "K_SENS": "Sensitivity", "D_SENS": "0.5"}
+           "K_SENS": "Sensitivity", "D_SENS": "0.7"}
 
 IMPORTY = {
     "KERNEL32.dll": ["VirtualProtect", "GetModuleHandleA", "GetModuleFileNameA", "GetPrivateProfileIntA",
@@ -225,7 +225,7 @@ dm_desat_c:
 dm_cislo:
     test edi, edi
     jnz dm_citl_rozsah
-    mov eax, 500
+    mov eax, 700
 dm_citl_rozsah:
     cmp eax, 100
     jge dm_citl_min

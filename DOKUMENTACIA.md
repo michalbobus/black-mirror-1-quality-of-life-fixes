@@ -84,13 +84,78 @@ Meranie (19. 11. 2026, hlavná ponuka, relatívny pohyb cez `SendInput` vrátane
 | 60 | 0.5 | 80–81 | 230 |
 | 0 | 0.5 | 83 | 230–231 |
 
-Plynulý kurzor rýchlosť nemení (Fps 60 = pôvodná hra), citlivosť 0.5 presne polovičná.
+Plynulý kurzor rýchlosť nemení (Fps 60 = pôvodná hra), citlivosť 0.5 presne polovičná. Od 23. 11. 2026 je predvolená citlivosť **0.7** (config.ini aj predvolená hodnota v kóde, keď kľúč chýba).
+
+## Doplnok pohodlia (DDraw.dll v C, 23. 11. 2026)
+Reťaz knižníc: hra → `DDraw.dll` (nový doplnok, `doplnok/bm_qol.c`) → všetky exporty preposlané na `bm_core.dll` (doterajší doplnok v assembleri: filmy, plynulý kurzor, citlivosť – len premenovaný) → `dgddraw.dll` (dgVoodoo2). Prekladá sa cez `zig cc` (Python balík `ziglang`), bez CRT, importuje len kernel32/user32; `doplnok/zostav.bat`, oba doplnky naraz `build_plugin.bat`.
+
+Háky (v pamäti, pred zápisom sa overia pôvodné bajty; iná verzia exe → nič):
+| adresa | čo | použitie |
+|---|---|---|
+| 0x402e21 `call 0x431cf8` | začiatok tiku logiky (25/s) | ESC, hotspoty, preskakovanie, koliesko, ladiaci kanál |
+| 0x440e9d `call 0x43f278` | WM_KEYDOWN | ESC a medzerník |
+| 0x44112b `call [DefWindowProcA]` | ostatné správy okna | WM_MOUSEWHEEL |
+| 0x42e416, 0x43a228 `call 0x433708` | načítanie uloženej hry (slot) | obnova zapamätaných nastavení |
+| 0x42b8af `call 0x43a112` | skript zapisuje celočíselnú systémovú premennú (meno, hodnota) | zapamätanie nastavení |
+| 0x43e78f (začiatok, 9 B → mostík) | zobrazenie (Blt zadného povrchu) | značky hotspotov |
+
+### config.ini
+```ini
+[Controls]
+EscapeMenu=1      ; ESC v hre = ponuka
+SpaceHotspots=1   ; podržaný medzerník = hotspoty
+HoldToSkip=1      ; podržaný ESC/medzerník v rozhovore = preskakovanie + zrýchlenie
+WheelInventory=1  ; koliesko = predmety inventára
+[Settings]
+Remember=1        ; nastavenia nezávislé od uloženej hry
+[Remembered]      ; zapisuje doplnok (tell_mode, tell_volume, sound_volume, music_volume, gamma)
+[Debug]
+Log=1             ; bm_qol.log v priečinku hry
+Explore=1         ; prieskumné háky: logovanie akcie use (0x4311f7) a predmetu na kurzor (0x408d5a)
+```
+Chýbajúci kľúč = 1 (Debug = 0), takže `install.bat` nemusí prepisovať existujúci config.ini.
+
+### ESC → ponuka
+Klik na ozubené kolieska = akcia „use“ objektu `1006.100c` (`0x4311f7(objekt, x, y)`). Objekt je v scéne len keď je myš pri hornom okraji, preto ho doplnok nájde (`0x406116(scéna, meno)`), prípadne načíta (`0x430052(meno, scéna, 1, 1)`) a zavolá jeho „use“. Po návrate do hry ho odstráni (`0x43040d(0, objekt, scéna)`), ak ho načítal sám a myš nie je hore (inak by kolieska ostali viditeľné). ESC v ponuke vracia do hry natívne. ESC sa takto správa len keď hráč ovláda hru (`0x4305d1() ≥ 1`, nie film, obrazovka nie je `1006.*`); inak ide hre (preskakovanie replík, filmov).
+
+Obrazovky: `1006.100e` hlavná ponuka, `1006.1037` Nastavení, `1006.101b` nahrávanie, `10a1` hala; aktuálna = meno na začiatku objektu `[0x49eb1c]` (`nastroje/scena.py`).
+
+### Hotspoty (medzerník)
+Zoznam objektov scény: kruhový zoznam `scéna+0x40` (prvý `[+0x28]`, ďalší `[objekt+0]`). Objekt: meno `+8`, aktívny `+0x34`, poradie `+0x2c`, región `+0x72`, názov (text pri prejdení myšou) `+0x7a`, obsluha use `+0xb5`, posuny `+0x3a/+0x3e/+0x42/+0x46`, animácia `+0x7e`, postava `+0x82`. Región: stred `(+0, +2)` (short), ohraničenie x `+0xA..+0xC`, y `+0xE..+0x10`. Hit-test 0x4034b0 (x, y, scéna, 0) → objekt pod kurzorom (`scéna+0x5ed`).
+Hotspot = aktívny objekt s regiónom a neprázdnym názvom, okrem `inv.*` a predmetu na kurzore. Poloha = stred regiónu prepočítaný opačne ako v hit-teste (+0x42/+0x46, animácia/postava, mínus posun scény +0x5d5/+0x5d9). Zbierajú sa každý tik, kým je medzerník držaný; značka (krúžok 21×21 px, svetlá zlatá s tmavým lemom) sa nakreslí do zadného povrchu tesne pred Blt a hneď potom sa pôvodné pixely vrátia (hra prekresľuje len zmenené časti). Vyžaduje 32-bit povrch (videomode …x32).
+Overené: hala – obraz, tabuľka podstavca, východy, dvere, stolík; po pustení bez zvyškov (`nastroje/objekty.py` vypíše objekty aj s regiónmi).
+
+### Podržanie ESC / medzerníka v rozhovore
+Natívne: ESC aj medzerník počas reči preskočia repliku (cesta 0x43f278 → udalosť 0x4c). Doplnok počas držania (hráč nemá kontrolu, nie film, nie ponuka) v každom tiku pošle hre stlačenie ESC (`0x43f278(VK_ESCAPE, skenkód 1)`) a posunie čas posledného tiku (`[0x49bda0]`, QPC) o 1/25 s dozadu, takže logika nečaká na ďalší tik – animácie medzi replikami bežia čo najrýchlejšie (obmedzuje ich zobrazenie s vsync).
+Meranie (úvodný rozhovor po Nová hra, od scény po kontrolu hráča, `nastroje/test/uvod_test.py`):
+| akcia | čas |
+|---|---|
+| nič | 158,0 s |
+| ESC / medzerník stláčané každých 0,4 s (pôvodná hra) | 44,7 s |
+| **ESC / medzerník podržaný (doplnok)** | **15,6 s** |
+Po preskočení je hra v rovnakom stave ako bez neho (hala, ako save.1).
+
+`tell_mode` (0x48d458) je bitová maska: bit 0 = text, bit 1 = hlas (3 = titulky zapnuté, 2 = vypnuté). Funkcia reči 0x438d58.
+
+### Koliesko myši – inventár
+Pole inventára `0x578c10`: 35 položiek po 0x28 B (meno[32], `+0x20` = 1 obsadené, `+0x24` = −1). Predmet na kurzore `[0x49f3e0]`; pripnutím sa z poľa vyberie (miesto ostane prázdne), vrátením (pravý klik) sa vráti na to isté miesto – poradie je stabilné. Inventár povolený: `[0x48d2d8] > 0`.
+Koliesko dole = ďalší predmet, hore = predchádzajúci (cyklicky; bez predmetu na kurzore dole = prvý, hore = posledný). Ak je predmet na kurzore, najprv sa vráti udalosťou pravého tlačidla (`0x417949(0x50703c)`, ako skutočný pravý klik), počká sa, kým kurzor nie je prázdny, a potom sa vyberie cieľ: objekt predmetu sa nájde alebo načíta do scény a zavolá sa jeho „use“ (to isté ako klik na predmet v lište; skript potom volá `0x408d5a(scéna, objekt, 1)`). Overené: listovanie oboma smermi, lišta potom zobrazuje predmety správne, v scéne neostávajú navyše objekty.
+
+### Zapamätané nastavenia
+Štartovací skript `main` pri **každom spustení hry** nastaví `tell_mode=2` (titulky vypnuté), `tell_volume=85`, `sound_volume=100`, `music_volume=80`; uložená hra obsahuje systémové premenné a pri načítaní ich prepíše (napr. save.1 mal `sound_volume=5`).
+Tabuľka systémových premenných: `0x48d470`, záznamy po 0x2D B (meno[32], ukazovateľ na hodnotu, ukazovateľ 2, príznak 1 = číslo, funkcia pri zmene), `nastroje/sysvar.py` ju vypíše aj s hodnotami. Zápis zo skriptu `0x43a112(meno, hodnota)`, čítanie `0x43a19f`, návrat na predvolenú `0x439f81`, nová hra `0x43a627`.
+Doplnok: zmena na obrazovke Nastavení (`1006.1037`) sa zapíše do `[Remembered]`; zápis zo skriptu mimo Nastavení sa zablokuje pri `tell_mode` vždy, pri hlasitostiach a game len počas štartovacieho skriptu `main` (neskoršie zámerné zmeny počas hry ostanú); po prvom tiku a po načítaní hry sa zapamätané hodnoty vrátia a zavolá sa funkcia premennej (hlasitosť zvuku 0x439c6d, hudby 0x439c47; gamu prepočítava hra pri prekreslení, použitá hodnota v 0x650a30).
+Posuvník zvuku mení `sound_volume` aj `music_volume`. Posuvníky sa ovládajú klikom na guľku a potom na čiaru.
+Overené 23. 11. 2026: titulky, reč 69, zvuk 79/hudba 63, gama −19 → reštart hry aj načítanie save.1 → hodnoty ostali.
+
+### Ladenie
+`nastroje/ladenie.py call ADRESA arg…` – doplnok exportuje štruktúru `ladenie`; Python do nej zapíše funkciu a argumenty (`s:text` = reťazec), doplnok ju zavolá v hernom vlákne pri ďalšom tiku a vráti výsledok. Ďalšie nástroje: `scena.py`, `objekty.py`, `podkurzorom.py`, `inventar.py`, `sysvar.py`; testy `test/seq.py` (klik, pravý klik, ťahanie, koliesko, klávesy, snímky + priebeh hlasitosti a titulkov), `test/hra_save.sh`, `test/uvod_test.py`.
 
 ## Rozpracované
 Vyhladzovanie postáv (profily filtrov pri zväčšení 800×600) – plán a postup v `ROZPRACOVANE.md`.
 
 ## Inštalácia
-- `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (ten len ak ešte neexistuje) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
+- `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `bm_core.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (ten len ak ešte neexistuje) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
 - `uninstall.bat` – súbory zmaže a príznak odstráni
 
 ## Overené v hre (19. 11. 2026, 1920×1080, Windows 125 %)

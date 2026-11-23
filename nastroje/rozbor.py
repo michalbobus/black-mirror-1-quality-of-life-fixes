@@ -23,6 +23,14 @@ def dis(va, n=40):
     for ins in cs.disasm(data[off:off + n * 8], va, n):
         print(f"{ins.address:08x}  {ins.mnemonic:6} {ins.op_str}")
 
+def volania(cil):
+    """Miesta s priamym call/jmp rel32 na adresu cil."""
+    out = []
+    for m in re.finditer(b"[\xe8\xe9]", data[0x1000:0x85000]):
+        o = 0x1000 + m.start(); rel = struct.unpack_from("<i", data, o + 1)[0]
+        if BASE + o + 5 + rel == cil: out.append(BASE + o)
+    return out
+
 def importy():
     d = {}
     for e in pe.DIRECTORY_ENTRY_IMPORT:
@@ -40,5 +48,7 @@ if __name__ == "__main__":
     elif cmd == "imp":
         for a, n in sorted(importy().items()):
             if not sys.argv[2:] or any(k.lower() in n.lower() for k in sys.argv[2:]): print(hex(a), n)
+    elif cmd == "call":
+        for a in sys.argv[2:]: print(a, [hex(x) for x in volania(int(a, 16))])
     elif cmd == "ref":
         print([hex(x) for x in odkazy(int(sys.argv[2], 16))])
