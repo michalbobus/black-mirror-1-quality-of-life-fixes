@@ -92,7 +92,7 @@ Reťaz knižníc: hra → `DDraw.dll` (nový doplnok, `doplnok/bm_qol.c`) → v�
 Háky (v pamäti, pred zápisom sa overia pôvodné bajty; iná verzia exe → nič):
 | adresa | čo | použitie |
 |---|---|---|
-| 0x402e21 `call 0x431cf8` | začiatok tiku logiky (25/s) | ESC, F5/F9, hotspoty, preskakovanie, koliesko, ladiaci kanál |
+| 0x402e21 `call 0x431cf8` | začiatok tiku logiky (25/s) | ESC, F5/F8, hotspoty, preskakovanie, koliesko, ladiaci kanál |
 | 0x438d58 (začiatok, 9 B → mostík) | začiatok repliky | koniec pretáčania |
 | 0x440e9d `call 0x43f278` | WM_KEYDOWN | ESC a medzerník |
 | 0x44112b `call [DefWindowProcA]` | ostatné správy okna | WM_MOUSEWHEEL |
@@ -106,7 +106,7 @@ Háky (v pamäti, pred zápisom sa overia pôvodné bajty; iná verzia exe → n
 EscapeMenu=1      ; ESC v hre = ponuka
 SpaceHotspots=1   ; podržaný medzerník = hotspoty
 HoldToSkip=1      ; ESC/medzerník v rozhovore = preskočenie po ďalšiu repliku (aj animácie, hudba)
-SaveLoadKeys=1    ; F5 = uložiť, F9 = nahrať
+SaveLoadKeys=1    ; F5 = uložiť, F8 = nahrať
 WheelInventory=1  ; koliesko = predmety inventára
 [Video]
 Smoothing=1       ; FXAA pred zväčšením (SmoothingThreshold=25, SmoothingThresholdMin=16, SmoothingSubpixel=75)
@@ -126,7 +126,7 @@ Obrazovky: `1006.100e` hlavná ponuka, `1006.1037` Nastavení, `1006.101b` nahr�
 
 ### Hotspoty (medzerník)
 Zoznam objektov scény: kruhový zoznam `scéna+0x40` (prvý `[+0x28]`, ďalší `[objekt+0]`). Objekt: meno `+8`, aktívny `+0x34`, poradie `+0x2c`, región `+0x72`, názov (text pri prejdení myšou) `+0x7a`, obsluha use `+0xb5`, posuny `+0x3a/+0x3e/+0x42/+0x46`, animácia `+0x7e`, postava `+0x82`. Región: stred `(+0, +2)` (short), ohraničenie x `+0xA..+0xC`, y `+0xE..+0x10`. Hit-test 0x4034b0 (x, y, scéna, 0) → objekt pod kurzorom (`scéna+0x5ed`).
-Hotspot = aktívny objekt s regiónom a neprázdnym názvom, okrem `inv.*` a predmetu na kurzore. Poloha = stred regiónu prepočítaný opačne ako v hit-teste (+0x42/+0x46, animácia/postava, mínus posun scény +0x5d5/+0x5d9). Zbierajú sa každý tik, kým je medzerník držaný; značka (krúžok 21×21 px, svetlá zlatá s tmavým lemom) sa nakreslí do zadného povrchu tesne pred Blt a hneď potom sa pôvodné pixely vrátia (hra prekresľuje len zmenené časti). Vyžaduje 32-bit povrch (videomode …x32).
+Hotspot = aktívny objekt s regiónom a neprázdnym názvom, okrem `inv.*`, predmetu na kurzore a objektu pod kurzorom (`scéna+0x5ed` – jeho názov je hore, značka by bola pod kurzorom). Poloha = stred regiónu prepočítaný opačne ako v hit-teste (+0x42/+0x46, animácia/postava, mínus posun scény +0x5d5/+0x5d9). Zbierajú sa každý tik, kým je medzerník držaný; značka (krúžok 21×21 px, svetlá zlatá s tmavým lemom) sa nakreslí do zadného povrchu tesne pred Blt a hneď potom sa pôvodné pixely vrátia (hra prekresľuje len zmenené časti). Vyžaduje 32-bit povrch (videomode …x32).
 Overené: hala – obraz, tabuľka podstavca, východy, dvere, stolík; po pustení bez zvyškov (`nastroje/objekty.py` vypíše objekty aj s regiónmi).
 
 ### Preskakovanie (ESC / medzerník, keď hráč nemá kontrolu)
@@ -146,14 +146,17 @@ Od stlačenia po začiatok ďalšej repliky: 16–172 ms (prechod do inej scény
 
 `tell_mode` (0x48d458) je bitová maska: bit 0 = text, bit 1 = hlas (3 = titulky zapnuté, 2 = vypnuté). Funkcia repliky 0x438d58.
 
-### F5 / F9 – uloženie a nahratie hry
+### F5 / F8 – uloženie a nahratie hry
 Natívne skratky: engine číta z agds.cfg `use_key`, `info_key`, `move_key`, `testmove_key`, `load_key` (predvolene F3), `save_key` (F2), `options_key`, `inventory_key`, `leftbutton`, `rightbutton`, `centerbutton`, `moveaction` (0x432317). F2/F3 však spúšťajú skripty zo systémových premenných `save_scr`/`load_scr`, ktoré sú v Black Mirror prázdne – v hre nerobia nič (overené). F5 ani iné klávesy tiež nič.
-Doplnok (`[Controls] SaveLoadKeys=1`): F5/F9 v hre otvorí ponuku (ako ESC) a po jej nabehnutí (hráč povolený) vyberie položku – Uložit hru `1006.100e.100b`, Nahrát hru `1006.100e.1020` (položky sú v scéne len pri prejdení myšou, preto ich doplnok načíta `0x430052` a zavolá ich „use“). F5/F9 v hlavnej ponuke vyberie položku hneď. ESC na obrazovke otvorenej skratkou: hra sa natívne vráti do hlavnej ponuky a doplnok po jej nabehnutí pošle ďalší ESC → rovno do hry.
+Doplnok (`[Controls] SaveLoadKeys=1`): F5/F8 v hre otvorí ponuku (ako ESC) a po jej nabehnutí (hráč povolený) vyberie položku – Uložit hru `1006.100e.100b`, Nahrát hru `1006.100e.1020` (položky sú v scéne len pri prejdení myšou, preto ich doplnok načíta `0x430052` a zavolá ich „use“). F5/F8 v hlavnej ponuke vyberie položku hneď. ESC na obrazovke otvorenej skratkou: hra sa natívne vráti do hlavnej ponuky a doplnok po jej nabehnutí pošle ďalší ESC → rovno do hry.
 ESC natívne funguje zo všetkých obrazoviek ponuky: Nastavení (`1006.1037`), Nahrát/Uložit (`1006.101b`), Tvůrci (`1006.103a`) → hlavná ponuka; hlavná ponuka (`1006.100e`) → hra. Overené 23. 11. 2026, nič nebolo treba pridávať.
 
 ### Koliesko myši – inventár
 Pole inventára `0x578c10`: 35 položiek po 0x28 B (meno[32], `+0x20` = 1 obsadené, `+0x24` = −1). Predmet na kurzore `[0x49f3e0]`; pripnutím sa z poľa vyberie (miesto ostane prázdne), vrátením (pravý klik) sa vráti na to isté miesto – poradie je stabilné. Inventár povolený: `[0x48d2d8] > 0`.
-Koliesko dole = ďalší predmet, hore = predchádzajúci (cyklicky; bez predmetu na kurzore dole = prvý, hore = posledný). Ak je predmet na kurzore, najprv sa vráti udalosťou pravého tlačidla (`0x417949(0x50703c)`, ako skutočný pravý klik), počká sa, kým kurzor nie je prázdny, a potom sa vyberie cieľ: objekt predmetu sa nájde alebo načíta do scény a zavolá sa jeho „use“ (to isté ako klik na predmet v lište; skript potom volá `0x408d5a(scéna, objekt, 1)`). Overené: listovanie oboma smermi, lišta potom zobrazuje predmety správne, v scéne neostávajú navyše objekty.
+Koliesko dole = ďalší predmet, hore = predchádzajúci (cyklicky; bez predmetu na kurzore dole = prvý, hore = posledný). Zárezy sa hromadia a spracujú naraz (n zárezov = n-tý predmet, jedno vrátenie + jeden výber).
+Postup (stavový automat v tiku): ak je predmet na kurzore, vráti sa udalosťou pravého tlačidla (`0x417949(0x50703c)`, ako skutočný pravý klik) → čaká sa, kým kurzor nie je prázdny a predmet je späť na svojom mieste v poli → **pauza 12 tikov (~0,5 s)** → výber cieľa: objekt predmetu sa nájde alebo načíta do scény a zavolá sa jeho „use“ (to isté ako klik na predmet v lište; skript predmet vyradí z poľa a zavolá `0x408d5a(scéna, objekt, 1)`) → čaká sa, kým je cieľ na kurzore → pauza 8 tikov.
+**Chyba z 23. 11. (opravená):** bez páuz sa pri rýchlom točení vybral predmet, ktorého vrátenie ešte dobiehalo – skript ho vyradil z inventára, ale nepripol na kurzor, a predmet sa stratil (smuteční list). Výber tesne po vrátení zlyhal v ~0,25 s okne, vrátenie tesne po výbere sa ignorovalo. Poistka: ak cieľ do 25 tikov nie je na kurzore a v poli chýba, doplnok vráti jeho položku poľa (záloha 0x28 B pred výberom) a výber raz zopakuje.
+Záťažový test `nastroje/test/koliesko_test.py 40` (1–3 zárezy za sebou s odstupom 30–300 ms, rôzne miesta vrátane obrazu a lišty, kontrola, že žiadny predmet nezmizol): pred opravou sa list stratil; po oprave 40/40 bez chyby, 58 výberov, poistka nebola potrebná. Lišta potom zobrazuje oba predmety.
 
 ### Zapamätané nastavenia
 Štartovací skript `main` pri **každom spustení hry** nastaví `tell_mode=2` (titulky vypnuté), `tell_volume=85`, `sound_volume=100`, `music_volume=80`; uložená hra obsahuje systémové premenné a pri načítaní ich prepíše (napr. save.1 mal `sound_volume=5`).

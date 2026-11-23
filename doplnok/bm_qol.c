@@ -177,10 +177,12 @@ static void zbieraj_hotspoty(void)
     pocet_hotspotov = 0;
     if (!s) return;
     unsigned char *prvy = *(unsigned char **)(s + 0x40 + 0x28), *o = prvy;
+    unsigned char *pod_kurzorom = *(unsigned char **)(s + 0x5ed);
     int n = 0;
     while (o && n++ < 1000 && pocet_hotspotov < MAX_HOTSPOTOV) {
         unsigned char *reg = *(unsigned char **)(o + 0x72), *nazov = *(unsigned char **)(o + 0x7a);
-        if (I32(o, 0x34) && reg && nazov && nazov[0] && !zacina((char *)o + 8, "inv.") && o != VYBRANY_PREDMET) {
+        if (I32(o, 0x34) && reg && nazov && nazov[0] && !zacina((char *)o + 8, "inv.") && o != VYBRANY_PREDMET &&
+            o != pod_kurzorom) {             /* objekt pod kurzorom má svoj názov hore – značka by bola pod kurzorom */
             /* inverzia prepočtu z hit-testu 0x4034b0: región = bod - animácia + obj[0x3a] - obj[0x42] */
             int x = *(short *)reg + I32(o, 0x42), y = *(short *)(reg + 2) + I32(o, 0x46);
             unsigned char *anim = *(unsigned char **)(o + 0x7e), *post = *(unsigned char **)(o + 0x82);
@@ -368,49 +370,85 @@ static void preskakovanie_tik(void)
 #define INVENTAR ((unsigned char *)0x578c10)
 #define INVENTAR_POVOLENY (*(int *)0x48d2d8 > 0)
 static int koliesko_kroky;          /* nahromadené zárezy kolieska (+ dole = ďalší predmet) */
-static int koliesko_stav, koliesko_cakanie;
+static int koliesko_stav, koliesko_cakanie, koliesko_slot, koliesko_drzany, koliesko_pokus;
 static char koliesko_ciel[32];
+static unsigned char koliesko_zaloha[0x28];  /* položka inventára cieľa pred výberom (poistka) */
 
 static int obsadene(int i) { unsigned char *e = INVENTAR + i * 0x28; return e[0] && *(int *)(e + 0x20) == 1; }
+static int na_kurzore(const char *meno) { return VYBRANY_PREDMET && !lstrcmpA((char *)VYBRANY_PREDMET + 8, meno); }
 
-static void vyber_predmet(const char *meno)
+static void vyber_predmet(void)
 {
-    unsigned char *s = SCENA, *o = NAJDI_OBJEKT(s, meno);
-    if (!o) { ((int (__cdecl *)(const char *, unsigned char *, int, int))0x430052)(meno, s, 1, 1); o = NAJDI_OBJEKT(s, meno); }
-    loguj("koliesko: vyber %s (%x)", meno, (unsigned)o);
+    unsigned char *s = SCENA, *o = NAJDI_OBJEKT(s, koliesko_ciel);
+    if (!o) { ((int (__cdecl *)(const char *, unsigned char *, int, int))0x430052)(koliesko_ciel, s, 1, 1); o = NAJDI_OBJEKT(s, koliesko_ciel); }
+    loguj("koliesko: vyber %s (%x)", koliesko_ciel, (unsigned)o);
+    kopiruj(koliesko_zaloha, INVENTAR + koliesko_slot * 0x28, 0x28);
+    koliesko_stav = 3; koliesko_cakanie = 25;
     if (o) ((int (__cdecl *)(unsigned char *, int, int))0x4311f7)(o, *(int *)0x507010, *(int *)0x507014);
 }
 
+/* Stavy: 0 = nič, 1 = čaká sa, kým sa predmet z kurzora vráti na svoje miesto v poli, 2 = pauza ~0,5 s,
+ * 3 = čaká sa, kým sa cieľ pripne na kurzor (inak poistka vráti jeho položku do poľa a výber raz zopakuje),
+ * 4 = pauza po výbere. Zárezy počas toho sa hromadia a spracujú naraz (jedno vrátenie + jeden výber). */
 static void koliesko_tik(void)
 {
-    if (koliesko_stav == 1) {                       /* čaká sa na vrátenie predmetu z kurzora */
-        if (VYBRANY_PREDMET && --koliesko_cakanie > 0) return;
+    if (koliesko_stav == 1) {
+        if ((VYBRANY_PREDMET || !obsadene(koliesko_drzany)) && --koliesko_cakanie > 0) return;
+        if (VYBRANY_PREDMET) { loguj("koliesko: vratenie zlyhalo"); koliesko_stav = 0; return; }
+        koliesko_stav = 2; koliesko_cakanie = 12;   /* skript vrátenia ešte dobieha (~0,5 s) – inak výber zlyhá */
+        return;
+    }
+    if (koliesko_stav == 2) {
+        if (--koliesko_cakanie > 0) return;
+        if (!hra_v_scene() || !obsadene(koliesko_slot)) { koliesko_stav = 0; return; }
+        vyber_predmet();
+        return;
+    }
+    if (koliesko_stav == 3) {
+        if (na_kurzore(koliesko_ciel)) { koliesko_stav = 4; koliesko_cakanie = 8; return; }
+        if (--koliesko_cakanie > 0) return;
         koliesko_stav = 0;
-        if (!VYBRANY_PREDMET && hra_v_scene()) vyber_predmet(koliesko_ciel);
+        if (!VYBRANY_PREDMET && !obsadene(koliesko_slot)) {   /* skript predmet vyradil, ale nepripol – vrátiť */
+            kopiruj(INVENTAR + koliesko_slot * 0x28, koliesko_zaloha, 0x28);
+            loguj("koliesko: vyber zlyhal, %s vrateny do inventara%s", koliesko_ciel, koliesko_pokus ? "" : ", opakujem");
+            if (!koliesko_pokus++) { koliesko_stav = 2; koliesko_cakanie = 12; }
+        }
+        return;
+    }
+    if (koliesko_stav == 4) {                       /* po výbere krátka pauza, kým skript výberu dobehne */
+        if (--koliesko_cakanie <= 0) koliesko_stav = 0;
         return;
     }
     if (!koliesko_kroky) return;
-    int smer = koliesko_kroky > 0 ? 1 : -1;
-    koliesko_kroky -= smer;
-    if (!hra_v_scene() || !INVENTAR_POVOLENY) { koliesko_kroky = 0; return; }
+    int kroky = koliesko_kroky; koliesko_kroky = 0;
+    if (!hra_v_scene() || !INVENTAR_POVOLENY) return;
+    int smer = kroky > 0 ? 1 : -1, n = kroky * smer;
     int drzany = -1;                                /* miesto predmetu na kurzore = prvé prázdne */
     if (VYBRANY_PREDMET) for (int i = 0; i < 35; i++) if (!obsadene(i)) { drzany = i; break; }
-    int start = drzany >= 0 ? drzany : (smer > 0 ? -1 : 35), ciel = -1;
-    for (int k = 1; k <= 35; k++) {
-        int i = start + smer * k;
-        if (drzany >= 0) i = (i % 35 + 35) % 35;
-        else if (i < 0 || i >= 35) break;
-        if (i != drzany && obsadene(i)) { ciel = i; break; }
+    int poloha = drzany >= 0 ? drzany : (smer > 0 ? -1 : 35), ciel = -1;
+    for (int krok = 0; krok < n; krok++) {          /* n-tý obsadený slot v smere (cyklicky, ak niečo drží) */
+        int najdeny = -1;
+        for (int k = 1; k <= 35; k++) {
+            int i = poloha + smer * k;
+            if (drzany >= 0 || ciel >= 0) i = (i % 35 + 35) % 35;
+            else if (i < 0 || i >= 35) break;
+            if (i != drzany && obsadene(i)) { najdeny = i; break; }
+        }
+        if (najdeny < 0) break;
+        ciel = poloha = najdeny;
     }
     if (ciel < 0) return;
     kopiruj(koliesko_ciel, INVENTAR + ciel * 0x28, 31); koliesko_ciel[31] = 0;
+    koliesko_slot = ciel; koliesko_pokus = 0;
     if (VYBRANY_PREDMET) {                          /* najprv vrátiť predmet (ako pravý klik) */
+        loguj("koliesko: vratit %s, ciel %s", (char *)VYBRANY_PREDMET + 8, koliesko_ciel);
+        koliesko_drzany = drzany >= 0 ? drzany : 0;
         ((int (__cdecl *)(void *))0x417949)((void *)0x50703c);
         koliesko_stav = 1; koliesko_cakanie = 25;
-    } else vyber_predmet(koliesko_ciel);
+    } else vyber_predmet();
 }
 
-/* ---------- F5 = uložiť hru, F9 = nahrať hru (otvorí ponuku a vyberie položku) ---------- */
+/* ---------- F5 = uložiť hru, F8 = nahrať hru (otvorí ponuku a vyberie položku) ---------- */
 /* Stav: 1/2 = čaká sa na hlavnú ponuku (1006.100e) po kliku na kolieska, 3 = obrazovka otvorená skratkou,
  * 4 = ESC na nej (hra sa vráti do hlavnej ponuky) – ďalší ESC z hlavnej ponuky vráti rovno do hry. */
 static int cfg_skratky, skratka_ziadost, skratka_stav, skratka_polozka;
@@ -477,7 +515,7 @@ static void __cdecl klaves_dole(WPARAM w, LPARAM l)
     if (w == VK_ESCAPE && cfg_esc_ponuka && hra_v_scene()) { if (!opakovanie) esc_ziadost = 1; return; }
     if (w == VK_SPACE && cfg_hotspoty && hra_v_scene()) return;      /* hotspoty sa zbierajú v tiku */
     if ((w == VK_ESCAPE || w == VK_SPACE) && !opakovanie && bez_kontroly()) spusti_preskok();   /* + pôvodné preskočenie */
-    if ((w == VK_F5 || w == VK_F9) && cfg_skratky && !opakovanie) { skratka_ziadost = w == VK_F5 ? 1 : 2; return; }
+    if ((w == VK_F5 || w == VK_F8) && cfg_skratky && !opakovanie) { skratka_ziadost = w == VK_F5 ? 1 : 2; return; }
     if (w == VK_ESCAPE && !opakovanie && skratka_stav == 3 && SCENA && zacina((char *)SCENA, "1006.101b")) skratka_stav = 4;
     ((void (__cdecl *)(WPARAM, LPARAM))0x43f278)(w, l);
 }
