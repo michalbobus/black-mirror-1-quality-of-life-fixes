@@ -84,9 +84,9 @@ Vyhladzujú sa len postavy v scéne. Titulky, názvy predmetov a ponuky ostávaj
 2. Spusti hru ako zvyčajne.<br>
    *Start the game as usual.*
 
-Inštalácia skopíruje do priečinka hry knižnice `DDraw.dll`, `bm_core.dll`, `dgddraw.dll` a `D3DImm.dll` (dgVoodoo2 2.87.6), nastavenia `dgVoodoo.conf` a `config.ini` a doplní dve voľby do `agds.cfg`. Existujúci `config.ini` neprepíše, takže tvoje nastavenia ostanú.
+Inštalácia skopíruje do priečinka hry knižnice `DDraw.dll`, `bm_core.dll`, `dgddraw.dll` a `D3DImm.dll` (dgVoodoo2 2.87.6), nastavenia `dgVoodoo.conf` a `config.ini` a doplní dve voľby do `agds.cfg`. Existujúci `config.ini` neprepíše, takže tvoje nastavenia ostanú. Poznámky v `config.ini` sú po slovensky na slovenskom alebo českom Windows, inak po anglicky.
 
-*The installer copies the libraries `DDraw.dll`, `bm_core.dll`, `dgddraw.dll` and `D3DImm.dll` (dgVoodoo2 2.87.6) and the settings files `dgVoodoo.conf` and `config.ini` into the game folder and adds two options to `agds.cfg`. An existing `config.ini` is not overwritten, so your settings are kept.*
+*The installer copies the libraries `DDraw.dll`, `bm_core.dll`, `dgddraw.dll` and `D3DImm.dll` (dgVoodoo2 2.87.6) and the settings files `dgVoodoo.conf` and `config.ini` into the game folder and adds two options to `agds.cfg`. An existing `config.ini` is not overwritten, so your settings are kept. The comments in `config.ini` are in Slovak on Slovak or Czech Windows, otherwise in English.*
 
 **Odinštalovanie:** `uninstall.bat` súbory zmaže a vráti hru do pôvodného stavu.
 
