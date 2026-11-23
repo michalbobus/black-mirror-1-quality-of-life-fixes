@@ -92,7 +92,8 @@ Reťaz knižníc: hra → `DDraw.dll` (nový doplnok, `doplnok/bm_qol.c`) → v�
 Háky (v pamäti, pred zápisom sa overia pôvodné bajty; iná verzia exe → nič):
 | adresa | čo | použitie |
 |---|---|---|
-| 0x402e21 `call 0x431cf8` | začiatok tiku logiky (25/s) | ESC, hotspoty, preskakovanie, koliesko, ladiaci kanál |
+| 0x402e21 `call 0x431cf8` | začiatok tiku logiky (25/s) | ESC, F5/F9, hotspoty, preskakovanie, koliesko, ladiaci kanál |
+| 0x438d58 (začiatok, 9 B → mostík) | začiatok repliky | koniec pretáčania |
 | 0x440e9d `call 0x43f278` | WM_KEYDOWN | ESC a medzerník |
 | 0x44112b `call [DefWindowProcA]` | ostatné správy okna | WM_MOUSEWHEEL |
 | 0x42e416, 0x43a228 `call 0x433708` | načítanie uloženej hry (slot) | obnova zapamätaných nastavení |
@@ -104,7 +105,8 @@ Háky (v pamäti, pred zápisom sa overia pôvodné bajty; iná verzia exe → n
 [Controls]
 EscapeMenu=1      ; ESC v hre = ponuka
 SpaceHotspots=1   ; podržaný medzerník = hotspoty
-HoldToSkip=1      ; podržaný ESC/medzerník v rozhovore = preskakovanie + zrýchlenie
+HoldToSkip=1      ; ESC/medzerník v rozhovore = preskočenie po ďalšiu repliku (aj animácie, hudba)
+SaveLoadKeys=1    ; F5 = uložiť, F9 = nahrať
 WheelInventory=1  ; koliesko = predmety inventára
 [Video]
 Smoothing=1       ; FXAA pred zväčšením (SmoothingThreshold=25, SmoothingThresholdMin=16, SmoothingSubpixel=75)
@@ -127,17 +129,27 @@ Zoznam objektov scény: kruhový zoznam `scéna+0x40` (prvý `[+0x28]`, ďalší
 Hotspot = aktívny objekt s regiónom a neprázdnym názvom, okrem `inv.*` a predmetu na kurzore. Poloha = stred regiónu prepočítaný opačne ako v hit-teste (+0x42/+0x46, animácia/postava, mínus posun scény +0x5d5/+0x5d9). Zbierajú sa každý tik, kým je medzerník držaný; značka (krúžok 21×21 px, svetlá zlatá s tmavým lemom) sa nakreslí do zadného povrchu tesne pred Blt a hneď potom sa pôvodné pixely vrátia (hra prekresľuje len zmenené časti). Vyžaduje 32-bit povrch (videomode …x32).
 Overené: hala – obraz, tabuľka podstavca, východy, dvere, stolík; po pustení bez zvyškov (`nastroje/objekty.py` vypíše objekty aj s regiónmi).
 
-### Podržanie ESC / medzerníka v rozhovore
-Natívne: ESC aj medzerník počas reči preskočia repliku (cesta 0x43f278 → udalosť 0x4c). Doplnok počas držania (hráč nemá kontrolu, nie film, nie ponuka) v každom tiku pošle hre stlačenie ESC (`0x43f278(VK_ESCAPE, skenkód 1)`) a posunie čas posledného tiku (`[0x49bda0]`, QPC) o 1/25 s dozadu, takže logika nečaká na ďalší tik – animácie medzi replikami bežia čo najrýchlejšie (obmedzuje ich zobrazenie s vsync).
-Meranie (úvodný rozhovor po Nová hra, od scény po kontrolu hráča, `nastroje/test/uvod_test.py`):
-| akcia | čas |
-|---|---|
-| nič | 158,0 s |
-| ESC / medzerník stláčané každých 0,4 s (pôvodná hra) | 44,7 s |
-| **ESC / medzerník podržaný (doplnok)** | **15,6 s** |
-Po preskočení je hra v rovnakom stave ako bez neho (hala, ako save.1).
+### Preskakovanie (ESC / medzerník, keď hráč nemá kontrolu)
+Natívne: ESC aj medzerník počas reči preskočia len repliku (cesta 0x43f278 → udalosť 0x4c); animácie a hudba medzi replikami bežia ďalej.
+Doplnok (len v herných scénach – meno z hexadecimálnych číslic ako `123f`, `109f`; nie `main`, `new_game_tmp_screen`, `1006.*`, nie počas filmu, len keď hráč nemá kontrolu `0x4305d1() < 1`):
+- stlačenie: kláves ide aj hre (preskočí repliku) a spustí sa **pretáčanie**: logika nečaká na tik (`[0x49bda0]` QPC posledného tiku o 1/25 s dozadu), na obrazovku ide len jedna snímka za 100 ms (hák zobrazenia vráti hneď) a **jednorazové zvuky sa zastavia** – kanály `0x59afe8` po 16 B (+4 obsadený, +0xC vzorka), počet `[0x4904c8]`, vzorka +0x18 priorita, +0x1C = 1 slučka; zastavujú sa len neslučkové okrem reči (vzorka 0x49ef58), `0x445cb6(kanál)`; slučky (atmosféra scény) ostanú,
+- pretáčanie skončí, keď začne ďalšia replika (hák 0x438d58, prológ 9 B), keď hráč dostane kontrolu, alebo po 60 s,
+- podržanie: pretáča ďalej a každú novú repliku hneď preskočí (vloží ESC).
+Rozprávač na čiernej obrazovke (scéna `123f` po „Kapitola I“) je jedna zvuková stopa (hudba + hlas, kanál 0, priorita 50) a repliky sú k nej viazané titulky – jedno stlačenie zastaví stopu a preskočí celé rozprávanie.
 
-`tell_mode` (0x48d458) je bitová maska: bit 0 = text, bit 1 = hlas (3 = titulky zapnuté, 2 = vypnuté). Funkcia reči 0x438d58.
+Meranie (nová hra; `nastroje/test/uvod_test.py`, `nastroje/test/rozpravac_test.py`):
+| úsek | bez zásahu | pôvodná hra, ESC každých 0,4 s | doplnok 23. 11. ráno (zrýchlenie) | **doplnok – pretáčanie** |
+|---|---|---|---|---|
+| rozprávač 123f | 32,6 s | – | – | **0,1 s** (podržané aj 1 stlačenie) |
+| úvodný rozhovor v salóne (od scény po kontrolu) | 158,0 s | 44,7 s | 15,6 s | **2,4 s** podržané; stlačenie každé 2 s: 59,5 s |
+Od stlačenia po začiatok ďalšej repliky: 16–172 ms (prechod do inej scény ~1,6 s). Po preskočení je hra v rovnakom stave (hala, ako save.1).
+
+`tell_mode` (0x48d458) je bitová maska: bit 0 = text, bit 1 = hlas (3 = titulky zapnuté, 2 = vypnuté). Funkcia repliky 0x438d58.
+
+### F5 / F9 – uloženie a nahratie hry
+Natívne skratky: engine číta z agds.cfg `use_key`, `info_key`, `move_key`, `testmove_key`, `load_key` (predvolene F3), `save_key` (F2), `options_key`, `inventory_key`, `leftbutton`, `rightbutton`, `centerbutton`, `moveaction` (0x432317). F2/F3 však spúšťajú skripty zo systémových premenných `save_scr`/`load_scr`, ktoré sú v Black Mirror prázdne – v hre nerobia nič (overené). F5 ani iné klávesy tiež nič.
+Doplnok (`[Controls] SaveLoadKeys=1`): F5/F9 v hre otvorí ponuku (ako ESC) a po jej nabehnutí (hráč povolený) vyberie položku – Uložit hru `1006.100e.100b`, Nahrát hru `1006.100e.1020` (položky sú v scéne len pri prejdení myšou, preto ich doplnok načíta `0x430052` a zavolá ich „use“). F5/F9 v hlavnej ponuke vyberie položku hneď. ESC na obrazovke otvorenej skratkou: hra sa natívne vráti do hlavnej ponuky a doplnok po jej nabehnutí pošle ďalší ESC → rovno do hry.
+ESC natívne funguje zo všetkých obrazoviek ponuky: Nastavení (`1006.1037`), Nahrát/Uložit (`1006.101b`), Tvůrci (`1006.103a`) → hlavná ponuka; hlavná ponuka (`1006.100e`) → hra. Overené 23. 11. 2026, nič nebolo treba pridávať.
 
 ### Koliesko myši – inventár
 Pole inventára `0x578c10`: 35 položiek po 0x28 B (meno[32], `+0x20` = 1 obsadené, `+0x24` = −1). Predmet na kurzore `[0x49f3e0]`; pripnutím sa z poľa vyberie (miesto ostane prázdne), vrátením (pravý klik) sa vráti na to isté miesto – poradie je stabilné. Inventár povolený: `[0x48d2d8] > 0`.

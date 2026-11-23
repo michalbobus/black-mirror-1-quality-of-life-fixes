@@ -39,7 +39,8 @@ static int log_zapnuty;
 static void loguj(const char *fmt, ...)
 {
     if (!log_zapnuty) return;
-    char b[1024]; va_list a; va_start(a, fmt); int n = wvsprintfA(b, fmt, a); va_end(a);
+    char b[1024]; int n = wsprintfA(b, "%6u ", GetTickCount() % 1000000);
+    va_list a; va_start(a, fmt); n += wvsprintfA(b + n, fmt, a); va_end(a);
     b[n++] = '\r'; b[n++] = '\n';
     HANDLE h = CreateFileA(cesta_log, FILE_APPEND_DATA, FILE_SHARE_READ, 0, OPEN_ALWAYS, 0, 0);
     if (h != INVALID_HANDLE_VALUE) { DWORD w; WriteFile(h, b, n, &w, 0); CloseHandle(h); }
@@ -295,19 +296,70 @@ static void obnov_nastavenia(const char *preco)
     }
 }
 
-/* ---------- podržanie ESC / medzerníka počas rozhovoru: preskakovanie replík + zrýchlenie hry ---------- */
-static unsigned tik_qpc;        /* QPC tiky jedného tiku logiky (1/25 s) */
-static int preskakuje;
+/* ---------- preskakovanie (ESC / medzerník, keď hráč nemá kontrolu) ---------- */
+/* Stlačenie: hra natívne preskočí práve hovorenú repliku; doplnok potom „pretáča“ – logika nečaká na tik,
+ * snímky sa (okrem jednej za 100 ms) neposielajú na obrazovku a jednorazové zvuky (nie slučky, nie reč) sa zastavia,
+ * aby skript nečakal na ich dohranie (napr. hudba pod rozprávačom) – až kým nezačne ďalšia replika alebo hráč
+ * nedostane kontrolu. Držanie: pokračuje cez ďalšie repliky. */
+static unsigned tik_qpc;            /* QPC tiky jedného tiku logiky (1/25 s) */
+static int preskakuje;              /* pretáčanie práve beží */
+static volatile int pocet_replik;   /* zvyšuje hák repliky 0x438d58 */
+static int preskok_repliky;         /* pocet_replik pri spustení pretáčania */
+static DWORD preskok_start;
+
+/* Herná scéna má meno z hexadecimálnych číslic (10a1, 109f, 123f); ponuky sú 1006.*, ďalej main, new_game_tmp_screen. */
+static int herna_scena(void)
+{
+    const char *m = (const char *)SCENA;
+    if (!m || !*m) return 0;
+    for (int i = 0; m[i]; i++)
+        if (i > 8 || !((m[i] >= '0' && m[i] <= '9') || (m[i] >= 'a' && m[i] <= 'f'))) return 0;
+    return 1;
+}
+
+static int bez_kontroly(void)
+{
+    return herna_scena() && !FILM_BEZI && POUZIVATEL_POVOLENY() < 1;
+}
+
+static void spusti_preskok(void)
+{
+    if (!cfg_preskakovanie || !bez_kontroly()) return;
+    preskakuje = 1; preskok_repliky = pocet_replik; preskok_start = GetTickCount();
+    loguj("preskok start (repliky %d, scena %s, esc %d medzera %d)", pocet_replik, (char *)SCENA,
+          drzi(VK_ESCAPE), drzi(VK_SPACE));
+}
+
+/* Zastaví jednorazové zvuky: kanály 0x59afe8 po 16 B (+4 obsadený, +0xC vzorka), počet [0x4904c8];
+ * vzorka +0x1C = 1 slučka. Reč (vzorka 0x49ef58) nechá – tú preskočí hra sama. */
+static void zastav_jednorazove_zvuky(void)
+{
+    int n = *(int *)0x4904c8;
+    for (int i = 0; i < n && i < 64; i++) {
+        unsigned char *k = (unsigned char *)0x59afe8 + 16 * i, *v = *(unsigned char **)(k + 0xc);
+        if (!*(int *)(k + 4) || !v || v == (unsigned char *)0x49ef58 || *(int *)(v + 0x1c)) continue;
+        loguj("  zastaveny zvuk kanal %d prio %d", i, *(int *)(v + 0x18));
+        ((void (__cdecl *)(int))0x445cb6)(i);
+    }
+}
 
 static void preskakovanie_tik(void)
 {
     int drzane = cfg_preskakovanie && (drzi(VK_ESCAPE) || drzi(VK_SPACE));
-    preskakuje = drzane && SCENA && !FILM_BEZI && POUZIVATEL_POVOLENY() < 1 && !zacina((char *)SCENA, "1006.");
+    if (drzane && !preskakuje) spusti_preskok();
     if (!preskakuje) return;
-    /* ESC = pôvodné preskočenie repliky (WM_KEYDOWN, skenkód 1) */
-    ((void (__cdecl *)(WPARAM, LPARAM))0x43f278)(VK_ESCAPE, 0x00010001);
-    /* zrýchlenie: posledný tik o 1/25 s skôr -> logika nečaká na ďalší tik (rýchlosť obmedzí zobrazenie/vsync) */
-    if (tik_qpc) *(LONGLONG *)0x49bda0 -= tik_qpc;
+    if (!bez_kontroly() || GetTickCount() - preskok_start > 60000 ||
+        (!drzane && pocet_replik != preskok_repliky)) {
+        loguj("preskok koniec (repliky %d, kontrola %d)", pocet_replik, POUZIVATEL_POVOLENY());
+        preskakuje = 0; return;
+    }
+    /* držanie: aj nové repliky sa hneď preskočia (pôvodné preskočenie repliky, WM_KEYDOWN ESC) */
+    if (drzane && pocet_replik != preskok_repliky) {
+        ((void (__cdecl *)(WPARAM, LPARAM))0x43f278)(VK_ESCAPE, 0x00010001);
+        preskok_repliky = pocet_replik;
+    }
+    zastav_jednorazove_zvuky();
+    if (tik_qpc) *(LONGLONG *)0x49bda0 -= tik_qpc;          /* logika nečaká na ďalší tik */
 }
 
 /* ---------- koliesko myši: listovanie predmetmi inventára na kurzore ---------- */
@@ -358,6 +410,47 @@ static void koliesko_tik(void)
     } else vyber_predmet(koliesko_ciel);
 }
 
+/* ---------- F5 = uložiť hru, F9 = nahrať hru (otvorí ponuku a vyberie položku) ---------- */
+/* Stav: 1/2 = čaká sa na hlavnú ponuku (1006.100e) po kliku na kolieska, 3 = obrazovka otvorená skratkou,
+ * 4 = ESC na nej (hra sa vráti do hlavnej ponuky) – ďalší ESC z hlavnej ponuky vráti rovno do hry. */
+static int cfg_skratky, skratka_ziadost, skratka_stav, skratka_polozka;
+static DWORD skratka_cas;
+
+static void skratky_tik(void)
+{
+    unsigned char *s = SCENA;
+    if (skratka_ziadost) {
+        int z = skratka_ziadost; skratka_ziadost = 0;
+        if (s && !lstrcmpA((char *)s, "1006.100e")) { skratka_polozka = z; skratka_stav = 2; skratka_cas = GetTickCount(); }
+        else if (hra_v_scene()) { otvor_ponuku(); skratka_polozka = z; skratka_stav = 1; skratka_cas = GetTickCount(); }
+        return;
+    }
+    if (!skratka_stav) return;
+    if (skratka_stav <= 2) {
+        if (s && !lstrcmpA((char *)s, "1006.100e") && POUZIVATEL_POVOLENY() >= 1) {   /* ponuka už nabehla */
+            const char *m = skratka_polozka == 1 ? "1006.100e.100b" : "1006.100e.1020";     /* Uložit / Nahrát */
+            unsigned char *o = NAJDI_OBJEKT(s, m);
+            if (!o) {           /* položka je v scéne len pri prejdení myšou */
+                ((int (__cdecl *)(const char *, unsigned char *, int, int))0x430052)(m, s, 1, 1);
+                o = NAJDI_OBJEKT(s, m);
+            }
+            if (o) {
+                loguj("skratka -> %s", m);
+                ((int (__cdecl *)(unsigned char *, int, int))0x4311f7)(o, 397, skratka_polozka == 1 ? 233 : 269);
+                skratka_stav = 3; return;
+            }
+        }
+        if (GetTickCount() - skratka_cas > 5000) { loguj("skratka: ponuka neprisla"); skratka_stav = 0; }
+        return;
+    }
+    if (skratka_stav == 4 && s && !lstrcmpA((char *)s, "1006.100e") && POUZIVATEL_POVOLENY() >= 1) {   /* späť do hry */
+        loguj("skratka: ESC -> hra");
+        ((void (__cdecl *)(WPARAM, LPARAM))0x43f278)(VK_ESCAPE, 0x00010001);
+        skratka_stav = 0; return;
+    }
+    if (hra_v_scene()) skratka_stav = 0;                    /* po uložení/nahratí je hráč späť v hre */
+}
+
 /* ---------- háky ---------- */
 static int prvy_tik = 1;
 static int __cdecl hra_tik(void)
@@ -372,6 +465,7 @@ static int __cdecl hra_tik(void)
     preskakovanie_tik();
     ladenie.udalosti[4] = preskakuje;
     if (cfg_koliesko) koliesko_tik();
+    skratky_tik();
     return ((fn0)0x431cf8)();
 }
 
@@ -382,6 +476,9 @@ static void __cdecl klaves_dole(WPARAM w, LPARAM l)
     loguj("klaves %x opak %d scena %s pouz %d", (int)w, opakovanie, SCENA ? (char *)SCENA : "-", POUZIVATEL_POVOLENY());
     if (w == VK_ESCAPE && cfg_esc_ponuka && hra_v_scene()) { if (!opakovanie) esc_ziadost = 1; return; }
     if (w == VK_SPACE && cfg_hotspoty && hra_v_scene()) return;      /* hotspoty sa zbierajú v tiku */
+    if ((w == VK_ESCAPE || w == VK_SPACE) && !opakovanie && bez_kontroly()) spusti_preskok();   /* + pôvodné preskočenie */
+    if ((w == VK_F5 || w == VK_F9) && cfg_skratky && !opakovanie) { skratka_ziadost = w == VK_F5 ? 1 : 2; return; }
+    if (w == VK_ESCAPE && !opakovanie && skratka_stav == 3 && SCENA && zacina((char *)SCENA, "1006.101b")) skratka_stav = 4;
     ((void (__cdecl *)(WPARAM, LPARAM))0x43f278)(w, l);
 }
 
@@ -586,6 +683,12 @@ static void obnov_snimku(void)
 static void __cdecl zobraz(void)
 {
     ladenie.udalosti[3]++;
+    if (preskakuje) {                                   /* pretáčanie: na obrazovku len jedna snímka za 100 ms */
+        static DWORD posledna;
+        DWORD t = GetTickCount();
+        if (t - posledna < 100) { ladenie.udalosti[11]++; return; }
+        posledna = t;
+    }
     LARGE_INTEGER t0, t1; QueryPerformanceCounter(&t0);
     int vyhladene = vyhlad_snimku();
     QueryPerformanceCounter(&t1); ladenie.udalosti[5] = (int)(t1.QuadPart - t0.QuadPart);
@@ -610,6 +713,25 @@ static void __cdecl predmet_na_kurzor(void *s, unsigned char *o, int rezim)
 {
     loguj("predmet na kurzor %s rezim %d", o ? (char *)o + 8 : "-", rezim);
     predmet_povodne(s, o, rezim);
+}
+
+/* Replika postavy (reč + titulok): 0x438d58 – volajú ju skriptové príkazy. */
+static int (__cdecl *replika_povodne)(int, int, int, int, int, int, int, int);
+static int __cdecl replika(int a, int b, int c, int d, int e, int f, int g, int h)
+{
+    pocet_replik++;
+    loguj("replika %x %x %x %x %x %x scena %s", a, b, c, d, e, f, SCENA ? (char *)SCENA : "-");
+    return replika_povodne(a, b, c, d, e, f, g, h);
+}
+
+/* Štart zvuku: 0x445b66(typ?, vzorka) – na prieskum. */
+static int (__cdecl *zvuk_povodne)(int, unsigned char *, int, int, int, int);
+static int __cdecl zvuk_start(int t, unsigned char *v, int c, int d, int e, int f)
+{
+    int r = zvuk_povodne(t, v, c, d, e, f);
+    char *meno = v ? *(char **)(v + 0x28) : 0;
+    loguj("zvuk %d %s prio %d -> kanal %d", t, meno && !IsBadStringPtrA(meno, 64) ? meno : "?", v ? *(int *)(v + 0x18) : 0, r);
+    return r;
 }
 
 /* Skript zapisuje celočíselnú systémovú premennú: 0x43a112(meno, hodnota), volá sa len z 0x42b8af. */
@@ -642,16 +764,21 @@ static void instaluj(void)
     hak_volanie(0x42b8af, 0x43a112, nastav_premennu);
     static const unsigned char zac_zobraz[] = {0x55, 0x8b, 0xec, 0x81, 0xec, 0xa8, 0x00, 0x00, 0x00};
     zobraz_povodne = hak_zaciatok(0x43e78f, zac_zobraz, 9, zobraz);
+    static const unsigned char zac_replika[] = {0x55, 0x8b, 0xec, 0x81, 0xec, 0x90, 0x00, 0x00, 0x00};
+    replika_povodne = hak_zaciatok(0x438d58, zac_replika, 9, replika);
     if (ini_cislo("Debug", "Explore", 0)) {
         static const unsigned char zac_pouzi[] = {0x55, 0x8b, 0xec, 0x83, 0xec, 0x10};
         pouzi_povodne = hak_zaciatok(0x4311f7, zac_pouzi, 6, pouzi);
         static const unsigned char zac_predmet[] = {0x55, 0x8b, 0xec, 0x51, 0x83, 0x7d, 0x0c, 0x00};
         predmet_povodne = hak_zaciatok(0x408d5a, zac_predmet, 8, predmet_na_kurzor);
+        static const unsigned char zac_zvuk[] = {0x55, 0x8b, 0xec, 0x83, 0xec, 0x0c};
+        zvuk_povodne = hak_zaciatok(0x445b66, zac_zvuk, 6, zvuk_start);
     }
     cfg_esc_ponuka = ini_cislo("Controls", "EscapeMenu", 1);
     cfg_hotspoty = ini_cislo("Controls", "SpaceHotspots", 1);
     cfg_preskakovanie = ini_cislo("Controls", "HoldToSkip", 1);
     cfg_koliesko = ini_cislo("Controls", "WheelInventory", 1);
+    cfg_skratky = ini_cislo("Controls", "SaveLoadKeys", 1);
     cfg_nastavenia = ini_cislo("Settings", "Remember", 1);
     cfg_vyhladenie = ini_cislo("Video", "Smoothing", 1);
     cfg_fxaa_sila = ini_cislo("Video", "SmoothingSubpixel", 75);
