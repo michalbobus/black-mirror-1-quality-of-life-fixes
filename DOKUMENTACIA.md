@@ -8,7 +8,7 @@ Hra: `D:\Hry\Steam\steamapps\common\Black Mirror` (engine AGDS, `agds.exe`, Dire
   - `ScalingMode = stretched_ar` – roztiahnutie so zachovaním pomeru 4:3 (pri 1920×1080 obraz 1440×1080, po bokoch čierne pásy 240 px)
   - `FullscreenAttributes = fake` – bezokrajové okno veľkosti obrazovky namiesto exkluzívneho fullscreenu (Alt+Tab bez prepínania režimu)
   - `dgVoodooWatermark = false`, `ForceVerticalSync = true`
-  - `Resampling = bilinear` (predvolené) – mierka 1,8× nie je celočíselná, preto vyhladenie
+  - `Resampling = lanczos-3` (od 23. 11. 2026, predtým bilinear) – ostrejšie zväčšenie; hrany postáv vyhladzuje FXAA v doplnku ešte pred zväčšením (pozri Vyhladzovanie postáv)
 - **Príznak `~ HIGHDPIAWARE`** v `HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers` pre `agds.exe`. Bez neho pri škálovaní Windows 125 % vyšlo okno 2400×1350 a obraz bol posunutý vpravo dole.
 - `DisplayROI = (800|600), pos:(0|0)` – výslovne celý obraz; doplnok pre filmy tento výrez počas filmu mení (pri prázdnej hodnote by dgVoodoo výrez nemusel používať).
 - Exe hry ani `agds.cfg` sa na disku nemenia.
@@ -97,7 +97,7 @@ Háky (v pamäti, pred zápisom sa overia pôvodné bajty; iná verzia exe → n
 | 0x44112b `call [DefWindowProcA]` | ostatné správy okna | WM_MOUSEWHEEL |
 | 0x42e416, 0x43a228 `call 0x433708` | načítanie uloženej hry (slot) | obnova zapamätaných nastavení |
 | 0x42b8af `call 0x43a112` | skript zapisuje celočíselnú systémovú premennú (meno, hodnota) | zapamätanie nastavení |
-| 0x43e78f (začiatok, 9 B → mostík) | zobrazenie (Blt zadného povrchu) | značky hotspotov |
+| 0x43e78f (začiatok, 9 B → mostík) | zobrazenie (Blt zadného povrchu) | FXAA pred zväčšením, značky hotspotov |
 
 ### config.ini
 ```ini
@@ -106,6 +106,8 @@ EscapeMenu=1      ; ESC v hre = ponuka
 SpaceHotspots=1   ; podržaný medzerník = hotspoty
 HoldToSkip=1      ; podržaný ESC/medzerník v rozhovore = preskakovanie + zrýchlenie
 WheelInventory=1  ; koliesko = predmety inventára
+[Video]
+Smoothing=1       ; FXAA pred zväčšením (SmoothingThreshold=25, SmoothingThresholdMin=16, SmoothingSubpixel=75)
 [Settings]
 Remember=1        ; nastavenia nezávislé od uloženej hry
 [Remembered]      ; zapisuje doplnok (tell_mode, tell_volume, sound_volume, music_volume, gamma)
@@ -113,7 +115,7 @@ Remember=1        ; nastavenia nezávislé od uloženej hry
 Log=1             ; bm_qol.log v priečinku hry
 Explore=1         ; prieskumné háky: logovanie akcie use (0x4311f7) a predmetu na kurzor (0x408d5a)
 ```
-Chýbajúci kľúč = 1 (Debug = 0), takže `install.bat` nemusí prepisovať existujúci config.ini.
+Chýbajúci kľúč = predvolená hodnota (zapnuté; Debug = 0), takže `install.bat` nemusí prepisovať existujúci config.ini.
 
 ### ESC → ponuka
 Klik na ozubené kolieska = akcia „use“ objektu `1006.100c` (`0x4311f7(objekt, x, y)`). Objekt je v scéne len keď je myš pri hornom okraji, preto ho doplnok nájde (`0x406116(scéna, meno)`), prípadne načíta (`0x430052(meno, scéna, 1, 1)`) a zavolá jeho „use“. Po návrate do hry ho odstráni (`0x43040d(0, objekt, scéna)`), ak ho načítal sám a myš nie je hore (inak by kolieska ostali viditeľné). ESC v ponuke vracia do hry natívne. ESC sa takto správa len keď hráč ovláda hru (`0x4305d1() ≥ 1`, nie film, obrazovka nie je `1006.*`); inak ide hre (preskakovanie replík, filmov).
@@ -151,8 +153,28 @@ Overené 23. 11. 2026: titulky, reč 69, zvuk 79/hudba 63, gama −19 → rešta
 ### Ladenie
 `nastroje/ladenie.py call ADRESA arg…` – doplnok exportuje štruktúru `ladenie`; Python do nej zapíše funkciu a argumenty (`s:text` = reťazec), doplnok ju zavolá v hernom vlákne pri ďalšom tiku a vráti výsledok. Ďalšie nástroje: `scena.py`, `objekty.py`, `podkurzorom.py`, `inventar.py`, `sysvar.py`; testy `test/seq.py` (klik, pravý klik, ťahanie, koliesko, klávesy, snímky + priebeh hlasitosti a titulkov), `test/hra_save.sh`, `test/uvod_test.py`.
 
-## Rozpracované
-Vyhladzovanie postáv (profily filtrov pri zväčšení 800×600) – plán a postup v `ROZPRACOVANE.md`.
+## Vyhladzovanie postáv (23. 11. 2026)
+Postavy sú v 800×600 so „schodíkmi“ na hranách; pri zväčšení na 1440×1080 (mierka 1,8×) to bije do očí. Zábery prvej scény (salón, štyri postavy) automaticky: `nastroje/test/zaber.sh MENO RESAMPLING ISF [SMOOTHING]` (nová hra, preskočenie filmov, čakanie na scénu), porovnanie výrezov `nastroje/test/porovnaj.py`. Zábery v `snimky/profily`, porovnania v `snimky/porovnanie`.
+
+Filtre dgVoodoo (`Resampling`):
+| profil | výsledok |
+|---|---|
+| pointsampled | kockaté, nerovnomerné pixely (1,8×) |
+| bilinear (pôvodné) | mäkké, schody len rozmazané |
+| bicubic, lanczos-2, lanczos-3 | ostrejšie, schody na hranách vlasov a oblečenia ostávajú viditeľné |
+| ImageScaleFactor=2 + bilinear | skoro ako pointsampled – nevhodné |
+
+Žiadny filter dgVoodoo hrany nevyhladí, preto **vyhladenie pred zväčšením v doplnku DDraw.dll** (`[Video] Smoothing=1`): FXAA 3.11 (kvalitná verzia s hľadaním koncov hrany) nad snímkou 800×600 v háku zobrazenia 0x43e78f:
+- snímka zo zadného povrchu sa skopíruje (zdroj filtra aj záloha), FXAA počíta do vlastného buffera, do povrchu sa zapíšu len zmenené riadky, po Blt na obrazovku sa pôvodná snímka vráti (hra prekresľuje len zmenené časti, inak by sa vyhladenie hromadilo),
+- jas = (77 R + 150 G + 29 B) / 256; hrana, ak rozdiel jasu v okolí ≥ max(`SmoothingThresholdMin` = 16, `SmoothingThreshold` = 25 % maxima); subpixelové vyhladenie `SmoothingSubpixel` = 75 %; hľadanie konca hrany 7 krokov (1, 1, 1, 2, 2, 4, 8 px),
+- výpočet v celých číslach, 2 fázy (jas, FXAA) rozdelené na pásy riadkov: herné vlákno + 2 pracovné vlákna (počet jadier − 1, najviac 4),
+- počas filmov sa nepoužíva.
+Prah 25 % v hale: ~116 tisíc hranových pixelov, 4,4–4,7 ms na snímku; prah 35 %: 66 tisíc, 3,2 ms. Prvá verzia (desatinné čísla, jedno vlákno, prah 1/8) trvala 22–25 ms – nepoužiteľné.
+Plynulosť (krúženie myšou v hale, `nastroje/test/plynulost.py`): s FXAA aj bez 25,0 tikov/s a 59,4–60,0 zobrazení/s.
+
+**Výber:** `Resampling = lanczos-3` + FXAA s prahom 25 % (predvolené). Hrany postáv, stoličiek a rámov sú hladké, textúry (koberec, tapety) ostávajú detailné (`snimky/porovnanie/4_lanczos3_vs_fxaa25_1na1.png`). Alternatívy: mäkšie `bicubic` alebo pôvodné `bilinear` v dgVoodoo.conf; vyšší `SmoothingThreshold` = menej vyhladených hrán. Overené aj spolu s hotspotmi (značky sa kreslia po FXAA, potom sa vráti celá snímka).
+
+Neskúšané (nebolo treba): ReShade (FXAA/SMAA by pracovalo až na zväčšenom obraze z dgVoodoo, nie pred zväčšením), zväčšovače xBR/ScaleFX/FSR (dgVoodoo vlastné shadery nepodporuje).
 
 ## Inštalácia
 - `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `bm_core.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (ten len ak ešte neexistuje) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
@@ -165,4 +187,4 @@ Vyhladzovanie postáv (profily filtrov pri zväčšení 800×600) – plán a po
 
 Filmy (19. 11. 2026): úvod po „Nová hra“ a „Kapitola I“ roztiahnuté na 1920×870 (y 104–974), po filme sa obraz vráti na 4:3 (prvá scéna x 240–1680). Logá na začiatku zostávajú malé v strede. Po kapitole je chvíľu čierna obrazovka s rozprávačom – to je pôvodné správanie hry.
 
-Neskúšané: hranie samotné (scény, inventár, dialógy), ukladanie, Alt+Tab počas hry.
+Neskúšané: dlhšie hranie (ďalšie kapitoly), ukladanie cez ESC → Uložit hru, Alt+Tab počas hry.

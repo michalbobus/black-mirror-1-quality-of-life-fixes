@@ -408,13 +408,192 @@ static int __cdecl nacitaj_hru(int slot)
 
 /* Zobrazenie (Blt zadného povrchu na obrazovku). */
 static void (__cdecl *zobraz_povodne)(void);
+/* ---------- vyhladenie hrán pred zväčšením (FXAA nad snímkou 800×600) ---------- */
+/* [Video] Smoothing: 0 = vypnuté, 1 = FXAA. Snímka sa skopíruje (zdroj filtra aj záloha), výsledok sa zapíše do
+ * zadného povrchu, po Blt na obrazovku sa pôvodná snímka vráti (hra prekresľuje len zmenené časti). */
+static int cfg_vyhladenie, cfg_fxaa_sila, cfg_fxaa_prah, cfg_fxaa_min;   /* sila subpixelového vyhladenia v % (FXAA 3.11: 75), prahy hrany */
+static unsigned snimka[600][800], vystup[600][800];
+static unsigned char jas[600][800], zmeneny[600];
+
+static int abs_i(int x) { return x < 0 ? -x : x; }
+
+static void fxaa_jas(int y0, int y1)
+{
+    /* jas (zelená prevažuje ako vo FXAA) */
+    for (int y = y0; y < y1; y++)
+        for (int x = 0; x < 800; x++) {
+            unsigned c = snimka[y][x];
+            jas[y][x] = (unsigned char)((((c >> 16) & 255) * 77 + ((c >> 8) & 255) * 150 + (c & 255) * 29) >> 8);
+        }
+}
+
+static volatile LONG pocet_hran;
+static void fxaa_pas(int y0, int y1)
+{
+    if (y0 < 1) y0 = 1;
+    if (y1 > 599) y1 = 599;
+    static const int kroky_i[] = {1, 1, 1, 2, 2, 4, 8};
+    #define KROKOV 7
+    const float sub = cfg_fxaa_sila / 100.0f;
+    int hran = 0;
+    for (int y = y0; y < y1; y++) {
+        unsigned *riadok = vystup[y];
+        const unsigned char *jh = jas[y - 1], *js = jas[y], *jd = jas[y + 1];
+        for (int x = 1; x < 799; x++) {
+            /* rýchle vylúčenie pixelov bez hrany v celých číslach (prah: max(SmoothingThresholdMin, SmoothingThreshold % maxima)) */
+            int iM = js[x], iN = jh[x], iS = jd[x], iW = js[x - 1], iE = js[x + 1];
+            int imx = iM, imn = iM;
+            if (iN > imx) imx = iN; if (iN < imn) imn = iN;
+            if (iS > imx) imx = iS; if (iS < imn) imn = iS;
+            if (iW > imx) imx = iW; if (iW < imn) imn = iW;
+            if (iE > imx) imx = iE; if (iE < imn) imn = iE;
+            int prah = imx * cfg_fxaa_prah / 100; if (prah < cfg_fxaa_min) prah = cfg_fxaa_min;
+            if (imx - imn < prah) continue;
+            hran++;
+            int rozsah = imx - imn;
+            const unsigned char *j = &jas[y][x];
+            int iNW = j[-801], iNE = j[-799], iSW = j[799], iSE = j[801];
+            /* subpixelové vyhladenie: f = (smoothstep(|priemer - M| / rozsah))^2 * sila */
+            int dif = (2 * (iN + iS + iW + iE) + iNW + iNE + iSW + iSE) - 12 * iM; if (dif < 0) dif = -dif;
+            float f = (float)dif / (12 * rozsah); if (f > 1) f = 1;
+            f = f * f * (3 - 2 * f); f = f * f * sub;
+            /* smer hrany */
+            int horiz = abs_i(iNW - 2 * iW + iSW) + 2 * abs_i(iN - 2 * iM + iS) + abs_i(iNE - 2 * iE + iSE);
+            int vert  = abs_i(iNW - 2 * iN + iNE) + 2 * abs_i(iW - 2 * iM + iE) + abs_i(iSW - 2 * iS + iSE);
+            int vodorovna = horiz >= vert;
+            int l1 = vodorovna ? iN : iW, l2 = vodorovna ? iS : iE;
+            int g1 = abs_i(l1 - iM), g2 = abs_i(l2 - iM), krok, lokal2, grad;     /* lokal2 = 2 × priemer cez hranu */
+            if (g1 >= g2) { krok = -1; lokal2 = l1 + iM; grad = g1; } else { krok = 1; lokal2 = l2 + iM; grad = g2; }
+            grad = grad >> 1;                    /* prah konca hrany: 1/4 gradientu, v jednotkách 2 × jas */
+            if (grad < 1) grad = 1;
+            /* hľadanie koncov hrany pozdĺž nej: súčet jasu dvojice pixelov cez hranu sa líši od lokal2 */
+            int pozdlz = vodorovna ? 1 : 800, cez = vodorovna ? krok * 800 : krok;
+            int poz = vodorovna ? x : y, lim = vodorovna ? 800 : 600;
+            int d1 = 0, d2 = 0, k1 = 0, k2 = 0, hot1 = 0, hot2 = 0;
+            for (int i = 0; i < KROKOV && !(hot1 && hot2); i++) {
+                if (!hot1) {
+                    d1 += kroky_i[i];
+                    if (poz - d1 < 0) { d1 = poz; hot1 = 1; }
+                    else { const unsigned char *q = j - d1 * pozdlz; k1 = q[0] + q[cez] - lokal2; hot1 = abs_i(k1) >= grad; }
+                }
+                if (!hot2) {
+                    d2 += kroky_i[i];
+                    if (poz + d2 >= lim) { d2 = lim - 1 - poz; hot2 = 1; }
+                    else { const unsigned char *q = j + d2 * pozdlz; k2 = q[0] + q[cez] - lokal2; hot2 = abs_i(k2) >= grad; }
+                }
+            }
+            int dlzka = d1 + d2, bliz = d1 < d2 ? d1 : d2;
+            int stred_mensi = 2 * iM < lokal2;
+            int spravny = ((d1 < d2 ? k1 : k2) < 0) != stred_mensi;
+            float okraj = (spravny && dlzka) ? 0.5f - (float)bliz / dlzka : 0;
+            float b = okraj > f ? okraj : f;
+            if (b <= 0.01f) continue;
+            /* zmiešanie s pixelom cez hranu v pomere b */
+            unsigned c = snimka[y][x], d = vodorovna ? snimka[y + krok][x] : snimka[y][x + krok];
+            int w = (int)(b * 256);
+            unsigned r = ((((c >> 16) & 255) * (256 - w) + ((d >> 16) & 255) * w) >> 8);
+            unsigned g = ((((c >> 8) & 255) * (256 - w) + ((d >> 8) & 255) * w) >> 8);
+            unsigned bl = (((c & 255) * (256 - w) + (d & 255) * w) >> 8);
+            riadok[x] = (c & 0xFF000000) | (r << 16) | (g << 8) | bl;
+            zmeneny[y] = 1;
+        }
+    }
+    InterlockedExchangeAdd(&pocet_hran, hran);
+}
+
+/* Pracovné vlákna: snímka sa delí na pásy riadkov, fáza 0 = jas, fáza 1 = FXAA (potrebuje hotový jas okolia). */
+#define MAX_VLAKIEN 8
+static int pocet_vlakien;
+static HANDLE vlakno_start[MAX_VLAKIEN], vlakno_hotovo[MAX_VLAKIEN];
+static volatile int faza;
+
+static DWORD WINAPI pracovne_vlakno(LPVOID p)
+{
+    int i = (int)p;
+    for (;;) {
+        WaitForSingleObject(vlakno_start[i], INFINITE);
+        int y0 = 600 * i / pocet_vlakien, y1 = 600 * (i + 1) / pocet_vlakien;
+        if (faza == 0) fxaa_jas(y0, y1); else fxaa_pas(y0, y1);
+        SetEvent(vlakno_hotovo[i]);
+    }
+    return 0;
+}
+
+static void spusti_fazu(int f)
+{
+    faza = f;
+    for (int i = 1; i < pocet_vlakien; i++) SetEvent(vlakno_start[i]);
+    int y1 = 600 / pocet_vlakien;
+    if (f == 0) fxaa_jas(0, y1); else fxaa_pas(0, y1);       /* prvý pás robí herné vlákno */
+    if (pocet_vlakien > 1) WaitForMultipleObjects(pocet_vlakien - 1, vlakno_hotovo + 1, TRUE, INFINITE);
+}
+
+static void fxaa(unsigned char *pix, int pitch)
+{
+    if (!pocet_vlakien) {
+        SYSTEM_INFO si; GetSystemInfo(&si);
+        int n = si.dwNumberOfProcessors > 1 ? (int)si.dwNumberOfProcessors - 1 : 1;    /* jedno jadro nechať hre */
+        if (n > MAX_VLAKIEN) n = MAX_VLAKIEN;
+        if (n > 4) n = 4;
+        pocet_vlakien = 1;
+        for (int i = 1; i < n; i++) {
+            vlakno_start[i] = CreateEventA(0, FALSE, FALSE, 0); vlakno_hotovo[i] = CreateEventA(0, FALSE, FALSE, 0);
+            HANDLE h = CreateThread(0, 0, pracovne_vlakno, (LPVOID)i, 0, 0);
+            if (!h) break;
+            CloseHandle(h); pocet_vlakien = i + 1;
+        }
+    }
+    pocet_hran = 0;
+    spusti_fazu(0);
+    spusti_fazu(1);
+    /* do povrchu (môže byť nekešovaná pamäť) sa zapíšu len zmenené riadky, celé naraz */
+    for (int y = 0; y < 600; y++) if (zmeneny[y]) memcpy(pix + y * pitch, vystup[y], 800 * 4);
+    ladenie.udalosti[6] = pocet_hran;
+    ladenie.udalosti[10] = pocet_vlakien;
+}
+
+static int vyhlad_snimku(void)
+{
+    DDSD2 d;
+    if (!cfg_vyhladenie || FILM_BEZI || !SCENA || !zamkni(&d)) return 0;
+    LARGE_INTEGER t[4]; QueryPerformanceCounter(&t[0]);
+    int pitch = *(int *)(d.b + 0x10);
+    unsigned char *pix = *(unsigned char **)(d.b + 0x24);
+    if (*(unsigned *)(d.b + 8) < 600 || *(unsigned *)(d.b + 0xc) < 800) { odomkni(); return 0; }
+    for (int y = 0; y < 600; y++) memcpy(snimka[y], pix + y * pitch, 800 * 4);
+    memcpy(vystup, snimka, sizeof vystup); memset(zmeneny, 0, sizeof zmeneny);
+    QueryPerformanceCounter(&t[1]);
+    fxaa(pix, pitch);
+    QueryPerformanceCounter(&t[2]);
+    odomkni();
+    QueryPerformanceCounter(&t[3]);
+    ladenie.udalosti[7] = (int)(t[1].QuadPart - t[0].QuadPart);    /* kópia */
+    ladenie.udalosti[8] = (int)(t[2].QuadPart - t[1].QuadPart);    /* FXAA */
+    ladenie.udalosti[9] = (int)(t[3].QuadPart - t[2].QuadPart);    /* odomknutie */
+    return 1;
+}
+
+static void obnov_snimku(void)
+{
+    DDSD2 d;
+    if (!zamkni(&d)) return;
+    int pitch = *(int *)(d.b + 0x10);
+    unsigned char *pix = *(unsigned char **)(d.b + 0x24);
+    for (int y = 0; y < 600; y++) kopiruj(pix + y * pitch, snimka[y], 800 * 4);
+    odomkni();
+}
+
 static void __cdecl zobraz(void)
 {
     ladenie.udalosti[3]++;
+    LARGE_INTEGER t0, t1; QueryPerformanceCounter(&t0);
+    int vyhladene = vyhlad_snimku();
+    QueryPerformanceCounter(&t1); ladenie.udalosti[5] = (int)(t1.QuadPart - t0.QuadPart);
     int n = pocet_hotspotov;
     if (n) kresli_znacky(0);
     zobraz_povodne();
-    if (n) kresli_znacky(1);
+    if (vyhladene) obnov_snimku();            /* vráti aj pixely pod značkami */
+    else if (n) kresli_znacky(1);
 }
 
 /* Akcia „use“ na objekte (ľavý klik): 0x4311f7(objekt, x, y) – na prieskum. */
@@ -474,6 +653,10 @@ static void instaluj(void)
     cfg_preskakovanie = ini_cislo("Controls", "HoldToSkip", 1);
     cfg_koliesko = ini_cislo("Controls", "WheelInventory", 1);
     cfg_nastavenia = ini_cislo("Settings", "Remember", 1);
+    cfg_vyhladenie = ini_cislo("Video", "Smoothing", 1);
+    cfg_fxaa_sila = ini_cislo("Video", "SmoothingSubpixel", 75);
+    cfg_fxaa_prah = ini_cislo("Video", "SmoothingThreshold", 25);       /* % maxima jasu okolia */
+    cfg_fxaa_min = ini_cislo("Video", "SmoothingThresholdMin", 16);     /* najmenší rozdiel jasu 0–255 */
     nacitaj_zapamatane();
     LARGE_INTEGER f; QueryPerformanceFrequency(&f);
     if (!f.HighPart) tik_qpc = f.LowPart / 25;
