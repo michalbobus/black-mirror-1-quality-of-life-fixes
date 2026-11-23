@@ -34,6 +34,27 @@ Počas rozhovorov už ostatné klávesy (napríklad písmená) repliky nepreskak
 ### Nastavenia
 - **Nastavenia sa pamätajú** – titulky, hlasitosť reči, zvuku a hudby a gama korekcia platia stále, bez ohľadu na to, ktorú uloženú hru načítaš. Pôvodná hra ich pri každom spustení a načítaní pozície prepísala (napríklad titulky sa vždy vypli).
 
+## Ukážky pred a po
+
+### Vyhladenie postáv
+Výrez zväčšený 2×: pôvodná hra (rozmazané zväčšenie so zubatými hranami), ostrejšie zväčšenie a k nemu vyhladené hrany postáv.
+
+![Vyhladenie postáv](snimky/readme/vyhladenie.png)
+
+Celá scéna – pôvodná hra a hra s úpravami (s úpravami sú aj titulky zapnuté natrvalo):
+
+![Salón pred a po](snimky/readme/salon.png)
+
+Vyhladzujú sa len postavy v scéne. Titulky, názvy predmetov a ponuky ostávajú presne také ako bez vyhladenia (overené pixel po pixeli, hlavná ponuka je s vyhladením aj bez neho úplne rovnaká):
+
+![Titulky bez zmeny](snimky/readme/titulky.png)
+
+### Aktívne miesta (podržaný medzerník)
+![Hotspoty](snimky/readme/hotspoty.png)
+
+### Filmy na celú šírku
+![Filmy](snimky/readme/filmy.png)
+
 ## Inštalácia
 1. Spusti `install.bat`. Hru hľadá v `D:\Hry\Steam\steamapps\common\Black Mirror`. Ak ju máš inde, zadaj cestu ako parameter, napríklad `install.bat "C:\Hry\Black Mirror"`.
 2. Spusti hru ako zvyčajne.
