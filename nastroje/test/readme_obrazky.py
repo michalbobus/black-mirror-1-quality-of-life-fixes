@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 P = os.path.join(os.path.dirname(__file__), "..", "..", "snimky")
 PROF, ZDROJ, VYST = os.path.join(P, "profily"), os.path.join(P, "readme", "zdroj"), os.path.join(P, "readme")
-PISMO = ImageFont.truetype(r"C:\Windows\Fonts\segoeui.ttf", 22)
+PISMO = ImageFont.truetype(r"C:\Windows\Fonts\segoeui.ttf", 20)
 
 def panel(obrazky, popisy, sirka):
     """Obrázky vedľa seba, každý zmenšený/zväčšený na danú šírku, nad každým popisok."""
@@ -27,19 +27,19 @@ def zv(im, box, k=2):
 a, b, c = (Image.open(os.path.join(PROF, n + ".png")) for n in ("bilinear", "postavy_bez", "postavy_fxaa"))
 box = (560, 400, 800, 700)
 panel([zv(a, box), zv(b, box), zv(c, box)],
-      ["Pôvodná hra", "Ostrejšie zväčšenie (lanczos-3)", "+ vyhladené postavy"], 480).save(os.path.join(VYST, "vyhladenie.png"))
+      ["Pôvodná hra / Original", "Ostrejšie / Sharper (lanczos-3)", "+ vyhladené postavy / smoothed characters"], 480).save(os.path.join(VYST, "vyhladenie.png"))
 panel([a.crop((240, 80, 1680, 1080)), c.crop((240, 80, 1680, 1080))],
-      ["Pôvodná hra", "S úpravami"], 720).save(os.path.join(VYST, "salon.png"))
+      ["Pôvodná hra / Original game", "S úpravami / With improvements"], 720).save(os.path.join(VYST, "salon.png"))
 # titulky sa nemenia
 panel([zv(b, (740, 1000, 1190, 1050)), zv(c, (740, 1000, 1190, 1050))],
-      ["Titulok bez vyhladenia", "Titulok pri vyhladení postáv (bez zmeny)"], 900).save(os.path.join(VYST, "titulky.png"))
+      ["Bez vyhladenia / No smoothing", "S vyhladením postáv – bez zmeny / With character smoothing – unchanged"], 900).save(os.path.join(VYST, "titulky.png"))
 
 # 2. hotspoty
 bez, s = (Image.open(os.path.join(ZDROJ, n + ".png")) for n in ("hala", "hala_hotspoty"))
 panel([bez.crop((240, 80, 1680, 980)), s.crop((240, 80, 1680, 980))],
-      ["Hala", "Podržaný medzerník: východy (dvere) a ostatné miesta (krúžky)"], 720).save(os.path.join(VYST, "hotspoty.png"))
+      ["Hala / Hall", "Medzerník: východy (dvere), ostatné (krúžky) / Space: exits (doors), others (rings)"], 720).save(os.path.join(VYST, "hotspoty.png"))
 
 # 3. filmy na celú šírku
 f0, f1 = (Image.open(os.path.join(ZDROJ, n + ".png")) for n in ("film_43", "film_sirka"))
-panel([f0, f1], ["Pôvodne: film v obraze 4:3", "S úpravou: film na celú šírku"], 720).save(os.path.join(VYST, "filmy.png"))
+panel([f0, f1], ["Pôvodne / Original: 4:3", "S úpravou / Improved: full width"], 720).save(os.path.join(VYST, "filmy.png"))
 print("hotovo", os.listdir(VYST))
