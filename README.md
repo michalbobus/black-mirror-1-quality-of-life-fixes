@@ -56,7 +56,8 @@ Vyhladzujú sa len postavy v scéne. Titulky, názvy predmetov a ponuky ostávaj
 ![Filmy](snimky/readme/filmy.png)
 
 ## Inštalácia
-1. Spusti `install.bat`. Hru hľadá v `D:\Hry\Steam\steamapps\common\Black Mirror`. Ak ju máš inde, zadaj cestu ako parameter, napríklad `install.bat "C:\Hry\Black Mirror"`.
+1. Rozbaľ archív kamkoľvek a spusti `install.bat`. Hru nájde sám v Steame (aj v ďalších knižniciach Steamu na iných diskoch), prípadne v priečinku nad sebou, ak archív rozbalíš priamo do priečinka hry.
+   Ak hru nenájde (napríklad verzia mimo Steamu), pretiahni priečinok hry myšou na `install.bat` alebo zadaj cestu: `install.bat "C:\Hry\Black Mirror"`.
 2. Spusti hru ako zvyčajne.
 
 Inštalácia skopíruje do priečinka hry knižnice `DDraw.dll`, `bm_core.dll`, `dgddraw.dll` a `D3DImm.dll` (dgVoodoo2 2.87.6), nastavenia `dgVoodoo.conf` a `config.ini` a doplní dve voľby do `agds.cfg`. Existujúci `config.ini` neprepíše, takže tvoje nastavenia ostanú.
@@ -79,6 +80,9 @@ Inštalácia skopíruje do priečinka hry knižnice `DDraw.dll`, `bm_core.dll`, 
 | `[Settings] Remember` | 1 | pamätať nastavenia bez ohľadu na uloženú hru |
 
 Hodnoty zmenené v nastaveniach hry si doplnok zapisuje do sekcie `[Remembered]`. Zmeny v `config.ini` platia po reštarte hry. Ostrosť zväčšenia sa mení v `dgVoodoo.conf` (`Resampling = lanczos-3`, mäkšie `bicubic` alebo pôvodné `bilinear`).
+
+## Použité nástroje
+Preklad DirectDraw na Direct3D 11 robí [dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) 2.87.6 od Dégé (freeware), ktorý je súčasťou balíka.
 
 ## Pre vývojárov
 Technický popis, adresy v hre, merania a postupy testov sú v [DOKUMENTACIA.md](DOKUMENTACIA.md). Doplnky sa zostavujú cez `build_plugin.bat`; zdroj nového doplnku je `doplnok/bm_qol.c` a pôvodný sa skladá cez `nastroje/zostav_dll.py`.

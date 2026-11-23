@@ -1,13 +1,20 @@
 @echo off
 chcp 65001 >nul
 setlocal
-set "HRA=D:\Hry\Steam\steamapps\common\Black Mirror"
+rem Cesta k hre: parameter (aj pretiahnutie priečinka hry na tento súbor), inak priečinok nad týmto,
+rem inak tento priečinok, inak hľadanie v Steame (najdi_hru.ps1).
+set "HRA="
 if not "%~1"=="" set "HRA=%~1"
+if not defined HRA if exist "%~dp0..\agds.exe" set "HRA=%~dp0.."
+if not defined HRA if exist "%~dp0agds.exe" set "HRA=%~dp0."
+if not defined HRA for /f "usebackq delims=" %%P in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0najdi_hru.ps1"`) do set "HRA=%%P"
+if not defined HRA set "HRA=(nenájdená)"
 if not exist "%HRA%\agds.exe" (
-  echo Nenašiel som agds.exe v "%HRA%".
-  echo Použitie: install.bat "cesta\k\hre"
+  echo Nenašiel som hru Black Mirror ^(agds.exe^) – ani v Steame.
+  echo Pretiahni priečinok hry na tento súbor alebo spusti: %~nx0 "cesta\k\hre"
   pause & exit /b 1
 )
+echo Hra: "%HRA%"
 rem dgddraw.dll = dgVoodoo2 2.87.6 (premenovaný DDraw.dll); DDraw.dll = doplnok pohodlia (ESC, hotspoty, preskakovanie, koliesko, nastavenia)
 rem -> bm_core.dll = filmy na celú šírku, plynulý kurzor, citlivosť -> dgddraw.dll
 copy /y "%~dp0dgvoodoo\dgddraw.dll"    "%HRA%\" >nul || goto chyba

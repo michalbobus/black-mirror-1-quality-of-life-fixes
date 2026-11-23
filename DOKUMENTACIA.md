@@ -210,6 +210,7 @@ Neskúšané (nebolo treba): ReShade (FXAA/SMAA by pracovalo až na zväčšenom
 ## Inštalácia
 - `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `bm_core.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (ten len ak ešte neexistuje) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
 - `uninstall.bat` – súbory zmaže a príznak odstráni
+- Cesta k hre (obe dávky): parameter / pretiahnutý priečinok, inak priečinok nad dávkou alebo priečinok dávky (ak obsahuje `agds.exe`), inak `najdi_hru.ps1` – cesta Steamu z registra (HKCU/HKLM `Valve\Steam` SteamPath/InstallPath) a všetky knižnice z `steamapps\libraryfolders.vdf`, hľadá `steamapps\common\Black Mirrorgds.exe`. Overené 24. 11. 2026: inštalácia bez parametra našla hru, odinštalovanie odstránilo všetky súbory aj riadky v agds.cfg, nová inštalácia ich vrátila.
 
 ## Overené v hre (19. 11. 2026, 1920×1080, Windows 125 %)
 - okno 0,0–1920×1080 bez rámu, obraz x 240–1679 (= 1440×1080, 4:3)
