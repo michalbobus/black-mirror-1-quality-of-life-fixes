@@ -109,7 +109,7 @@ HoldToSkip=1      ; ESC/medzerník v rozhovore = preskočenie po ďalšiu replik
 SaveLoadKeys=1    ; F5 = uložiť, F8 = nahrať
 WheelInventory=1  ; koliesko = predmety inventára
 [Video]
-Smoothing=1       ; FXAA pred zväčšením (SmoothingThreshold=25, SmoothingThresholdMin=16, SmoothingSubpixel=75)
+Smoothing=1       ; FXAA pred zväčšením (1 = postavy, 2 = plocha scény) (SmoothingThreshold=25, SmoothingThresholdMin=16, SmoothingSubpixel=75)
 [Settings]
 Remember=1        ; nastavenia nezávislé od uloženej hry
 [Remembered]      ; zapisuje doplnok (tell_mode, tell_volume, sound_volume, music_volume, gamma)
@@ -125,22 +125,29 @@ Klik na ozubené kolieska = akcia „use“ objektu `1006.100c` (`0x4311f7(objek
 Obrazovky: `1006.100e` hlavná ponuka, `1006.1037` Nastavení, `1006.101b` nahrávanie, `10a1` hala; aktuálna = meno na začiatku objektu `[0x49eb1c]` (`nastroje/scena.py`).
 
 ### Hotspoty (medzerník)
-Zoznam objektov scény: kruhový zoznam `scéna+0x40` (prvý `[+0x28]`, ďalší `[objekt+0]`). Objekt: meno `+8`, aktívny `+0x34`, poradie `+0x2c`, región `+0x72`, názov (text pri prejdení myšou) `+0x7a`, obsluha use `+0xb5`, posuny `+0x3a/+0x3e/+0x42/+0x46`, animácia `+0x7e`, postava `+0x82`. Región: stred `(+0, +2)` (short), ohraničenie x `+0xA..+0xC`, y `+0xE..+0x10`. Hit-test 0x4034b0 (x, y, scéna, 0) → objekt pod kurzorom (`scéna+0x5ed`).
-Hotspot = aktívny objekt s regiónom a neprázdnym názvom, okrem `inv.*`, predmetu na kurzore a objektu pod kurzorom (`scéna+0x5ed` – jeho názov je hore, značka by bola pod kurzorom). Poloha = stred regiónu prepočítaný opačne ako v hit-teste (+0x42/+0x46, animácia/postava, mínus posun scény +0x5d5/+0x5d9). Zbierajú sa každý tik, kým je medzerník držaný; značka (krúžok 21×21 px, svetlá zlatá s tmavým lemom) sa nakreslí do zadného povrchu tesne pred Blt a hneď potom sa pôvodné pixely vrátia (hra prekresľuje len zmenené časti). Vyžaduje 32-bit povrch (videomode …x32).
-Overené: hala – obraz, tabuľka podstavca, východy, dvere, stolík; po pustení bez zvyškov (`nastroje/objekty.py` vypíše objekty aj s regiónmi).
+Zoznam objektov scény: kruhový zoznam `scéna+0x40` (prvý `[+0x28]`, ďalší `[objekt+0]`). Objekt: meno `+8`, aktívny `+0x34`, poradie `+0x2c`, región `+0x72`, názov (text pri prejdení myšou) `+0x7a`, obsluha use `+0xb5`, posuny `+0x3a/+0x3e/+0x42/+0x46`, animácia `+0x7e`, postava `+0x82`, klávesové obsluhy `+0xe1` (východy: tabulátor), ďalšia obsluha `+0xd1` (len východy). Región: stred `(+0, +2)` (short), ohraničenie x `+0xA..+0xC`, y `+0xE..+0x10`. Hit-test 0x4034b0 (x, y, scéna, 0) → objekt pod kurzorom (`scéna+0x5ed`).
+Hotspot = aktívny objekt s regiónom a neprázdnym názvom, okrem `inv.*` a predmetu na kurzore; poloha = stred regiónu prepočítaný opačne ako v hit-teste.
+
+**Tabulátor (natívne):** východy majú vlastnú obsluhu klávesu Tab – skript k objektu pripojí animáciu `kurzor_dvere.flc` (ikona dverí 24×32) na stred regiónu (`+0x7e`, posun `+0x42/+0x46`) a asi po 2,5 s ju odstráni. Hra stav klávesu nesleduje (GetKeyboardState len pri WM_KEYDOWN).
+
+**Značky ako animácie scény:** zoznam animácií `scéna+0x80` (prvá `[+0x28]`, ďalšia `[a+0]`; animácia: poradie `+0xC`, š/v `+0x10/+0x14`, x/y `+0x1C/+0x20` v súradniciach scény, pixely `+0x24`, meno `+0x41`, postava `+0x61`, vlastník `+0x71`; `nastroje/animacie.py`). Kurzor je animácia „mouse pic“ s poradím −10. Doplnok počas držania medzerníka vytvára vlastné animácie `0x406932(scéna, šablóna, −9, 0, "bmqol_hotspot")` – hra ich kreslí sama **pod kurzor** a sama prekresľuje; po pustení ich odstráni `0x406b31(scéna, &animácia)` (odstráni uzol, označí oblasť na prekreslenie, pixely šablóny nemení). Animácie sa hľadajú podľa mena, takže sa odstránia aj po návrate do scény z ponuky.
+Šablóna obrázka (29 B): šírka, výška, bity (32), x, y, ukazovateľ na pixely, typ. Pixely 4 B: B, G, R, 100; purpurová (255, 0, 255) = priehľadná. Ikona východu sa načíta `0x444f66(&šablóna, "kurzor_dvere.flc")` (ako ju načítava hra), krúžok (21×21, svetlá zlatá s tmavým lemom) má vlastné pixely.
+Východ = objekt s klávesovými obsluhami (`+0xe1` ≠ 0) → ikona dverí; ostatné → krúžok. Animácie sa prerobia len pri zmene zoznamu alebo polohy značiek. Overené v hale: 5 východov s dverami (zhodne s tabulátorom), obraz, tabuľka a stolík s krúžkom; kurzor je nad značkou; po pustení v scéne nezostane žiadna naša animácia. Nad východom sa kurzor sám mení na dvere (pôvodné správanie hry).
+Počas reči (obsadený kanál so vzorkou repliky 0x49ef58) medzerník hotspoty neukazuje a preskakuje repliku.
 
 ### Preskakovanie (ESC / medzerník, keď hráč nemá kontrolu)
-Natívne: ESC aj medzerník počas reči preskočia len repliku (cesta 0x43f278 → udalosť 0x4c); animácie a hudba medzi replikami bežia ďalej.
-Doplnok (len v herných scénach – meno z hexadecimálnych číslic ako `123f`, `109f`; nie `main`, `new_game_tmp_screen`, `1006.*`, nie počas filmu, len keď hráč nemá kontrolu `0x4305d1() < 1`):
-- stlačenie: kláves ide aj hre (preskočí repliku) a spustí sa **pretáčanie**: logika nečaká na tik (`[0x49bda0]` QPC posledného tiku o 1/25 s dozadu), na obrazovku ide len jedna snímka za 100 ms (hák zobrazenia vráti hneď) a **jednorazové zvuky sa zastavia** – kanály `0x59afe8` po 16 B (+4 obsadený, +0xC vzorka), počet `[0x4904c8]`, vzorka +0x18 priorita, +0x1C = 1 slučka; zastavujú sa len neslučkové okrem reči (vzorka 0x49ef58), `0x445cb6(kanál)`; slučky (atmosféra scény) ostanú,
-- pretáčanie skončí, keď začne ďalšia replika (hák 0x438d58, prológ 9 B), keď hráč dostane kontrolu, alebo po 60 s,
-- podržanie: pretáča ďalej a každú novú repliku hneď preskočí (vloží ESC).
-Rozprávač na čiernej obrazovke (scéna `123f` po „Kapitola I“) je jedna zvuková stopa (hudba + hlas, kanál 0, priorita 50) a repliky sú k nej viazané titulky – jedno stlačenie zastaví stopu a preskočí celé rozprávanie.
+Natívne: počas reči preskočí repliku **ktorýkoľvek kláves** (aj písmená) – cesta 0x43f278 → udalosť 0x4c; animácie a hudba medzi replikami bežia ďalej.
+Doplnok v herných scénach (meno z hexadecimálnych číslic ako `123f`, `109f`; nie `main`, `new_game_tmp_screen`, `1006.*`, nie počas filmu), keď hráč nemá kontrolu (`0x4305d1() < 1`):
+- **ostatné klávesy** sa hre neposielajú (nepreskakujú nič),
+- **medzerník** ide hre → preskočí presne jednu repliku; opakovanie pri držaní sa zahadzuje (držaný = jedna replika); nič sa nepretáča,
+- **ESC** ide hre (preskočí repliku) a spustí **pretáčanie**: logika nečaká na tik (`[0x49bda0]` QPC posledného tiku o 1/25 s dozadu), na obrazovku ide len jedna snímka za 100 ms a **jednorazové zvuky sa zastavia** – kanály `0x59afe8` po 16 B (+4 obsadený, +8 pozícia v bajtoch, +0xC vzorka), počet `[0x4904c8]`, vzorka: +0 dáta, +4 dĺžka, +8 frekvencia, +0xC kanály, +0x10 bajty/vzorku, +0x18 priorita, +0x1C = 1 slučka; zastavujú sa len neslučkové okrem reči (vzorka 0x49ef58), `0x445cb6(kanál)`; slučky (atmosféra scény) ostanú. Pretáčanie skončí, keď začne ďalšia replika (hák 0x438d58), keď hráč dostane kontrolu, alebo po 60 s. Podržaný ESC pretáča ďalej a každú novú repliku hneď preskočí.
+Rozprávač na čiernej obrazovke (scéna `123f`): hudobný podklad je jedna stopa (kanál 0, 44,1 kHz stereo, 27,2 s, priorita 50), hlas každej vety je samostatná vzorka repliky (kanál 1) – medzerník preto preskakuje po vetách a hlas ostáva v súlade s textom (ďalšia veta ~0,5 s po stlačení); podklad dohrá (spolu 27,2 s namiesto 32,6 s). ESC zastaví podklad a preskočí celé rozprávanie. Pozícia kanála (+8) sa dá zapisovať (hra ju rešpektuje), ale titulky rozprávača na nej nezávisia.
+Overené: v salóne 10× písmeno A za 3,5 s nepreskočilo nič (1 replika prirodzeným tempom), medzerník presne 1 replika, medzerník držaný 3 s tiež 1 replika; pri rozprávačovi 5 stlačení = 5 viet.
 
 Meranie (nová hra; `nastroje/test/uvod_test.py`, `nastroje/test/rozpravac_test.py`):
 | úsek | bez zásahu | pôvodná hra, ESC každých 0,4 s | doplnok 23. 11. ráno (zrýchlenie) | **doplnok – pretáčanie** |
 |---|---|---|---|---|
-| rozprávač 123f | 32,6 s | – | – | **0,1 s** (podržané aj 1 stlačenie) |
+| rozprávač 123f | 32,6 s | – | – | **0,1 s** ESC (podržaný aj 1 stlačenie); medzerník po vetách 27,2 s |
 | úvodný rozhovor v salóne (od scény po kontrolu) | 158,0 s | 44,7 s | 15,6 s | **2,4 s** podržané; stlačenie každé 2 s: 59,5 s |
 Od stlačenia po začiatok ďalšej repliky: 16–172 ms (prechod do inej scény ~1,6 s). Po preskočení je hra v rovnakom stave (hala, ako save.1).
 
@@ -187,7 +194,13 @@ Filtre dgVoodoo (`Resampling`):
 Prah 25 % v hale: ~116 tisíc hranových pixelov, 4,4–4,7 ms na snímku; prah 35 %: 66 tisíc, 3,2 ms. Prvá verzia (desatinné čísla, jedno vlákno, prah 1/8) trvala 22–25 ms – nepoužiteľné.
 Plynulosť (krúženie myšou v hale, `nastroje/test/plynulost.py`): s FXAA aj bez 25,0 tikov/s a 59,4–60,0 zobrazení/s.
 
-**Výber:** `Resampling = lanczos-3` + FXAA s prahom 25 % (predvolené). Hrany postáv, stoličiek a rámov sú hladké, textúry (koberec, tapety) ostávajú detailné (`snimky/porovnanie/4_lanczos3_vs_fxaa25_1na1.png`). Alternatívy: mäkšie `bicubic` alebo pôvodné `bilinear` v dgVoodoo.conf; vyšší `SmoothingThreshold` = menej vyhladených hrán. Overené aj spolu s hotspotmi (značky sa kreslia po FXAA, potom sa vráti celá snímka).
+**Výber:** `Resampling = lanczos-3` + FXAA s prahom 25 %. Hrany postáv, stoličiek a rámov sú hladké, textúry (koberec, tapety) ostávajú detailné (`snimky/porovnanie/4_lanczos3_vs_fxaa25_1na1.png`). Alternatívy: mäkšie `bicubic` alebo pôvodné `bilinear` v dgVoodoo.conf; vyšší `SmoothingThreshold` = menej vyhladených hrán.
+
+**Len postavy (`Smoothing=1`, predvolené):** FXAA nad celou snímkou zmäkčovalo a stmavovalo písmo (titulky, ponuky). Teraz sa vyhladzuje len v herných scénach a len v obdĺžnikoch postáv, nikdy v ponukách a v pásoch s textami (y < 45 a y ≥ 544):
+- NPC: animácie scény s ukazovateľom na postavu `+0x61`; obdĺžnik ako pri prekresľovaní v 0x406b31: x = post[0x4a] + post[0x37e], y = post[0x4e] + post[0x382], š = post[0x52], v = post[0x56], mínus posun scény,
+- hlavná postava (Samuel): pomenovaná animácia bez vlastníka a bez postavy (napr. `108f.1090`), obdĺžnik z animácie (x, y, š, v); vylúčené mená s `.bmp`, `.flc`, „animation“, „mouse pic“, „BWWorkArea“ a naše značky,
+- okraj 2 px; jas sa počíta pre celú snímku (okolie hrany), FXAA len vnútri obdĺžnikov.
+Overené v salóne: obdĺžniky sedia na všetkých 4 NPC aj na Samuelovi (`snimky/profily/postavy_fxaa.png` vs `postavy_bez.png`), titulok je bez zmeny, pozadie mimo postáv tiež. V hale 1 obdĺžnik, FXAA 0,9 ms (predtým 4,5 ms), 25 tikov/s, 59,7 zobrazení/s. `Smoothing=2` = celá plocha scény (y 45–543), stále bez ponúk a textov.
 
 Neskúšané (nebolo treba): ReShade (FXAA/SMAA by pracovalo až na zväčšenom obraze z dgVoodoo, nie pred zväčšením), zväčšovače xBR/ScaleFX/FSR (dgVoodoo vlastné shadery nepodporuje).
 

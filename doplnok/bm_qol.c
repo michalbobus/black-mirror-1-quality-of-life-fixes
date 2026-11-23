@@ -31,6 +31,7 @@ void *memset(void *c, int v, unsigned n) { void *r = c; __asm__ volatile("rep st
 static void kopiruj(void *c, const void *z, int n) { char *a = c; const char *b = z; while (n--) *a++ = *b++; }
 static int rovnake(const void *a, const void *b, int n) { const unsigned char *x = a, *y = b; while (n--) if (*x++ != *y++) return 0; return 1; }
 static int zacina(const char *s, const char *p) { while (*p) if (*s++ != *p++) return 0; return 1; }
+static int obsahuje(const char *s, const char *p) { for (; *s; s++) if (zacina(s, p)) return 1; return 0; }
 
 /* ---------- konfigurácia a log ---------- */
 static char cesta_ini[MAX_PATH], cesta_log[MAX_PATH];
@@ -166,10 +167,46 @@ static void schovaj_kolieska(void)
     loguj("kolieska schovane %x", (unsigned)o);
 }
 
-/* ---------- hotspoty (medzerník): značky v strede regiónov objektov, ktoré majú názov ---------- */
+static int rec_bezi(void);
+
+/* ---------- hotspoty (medzerník) ---------- */
+/* Značky sú animácie scény (zoznam scéna+0x80, ako kurzor), takže ich hra kreslí sama – pod kurzor (poradie −9,
+ * kurzor má −10) a s vlastným prekresľovaním. Východy (objekty s klávesovou obsluhou tabulátora, +0xE1) dostanú
+ * ikonu dverí kurzor_dvere.flc ako pri tabulátore, ostatné objekty s názvom krúžok. Animácie sa spoznajú podľa mena,
+ * takže sa dajú odstrániť aj po návrate do scény (napr. z ponuky). */
 #define MAX_HOTSPOTOV 64
-static struct { int x, y; } hotspoty[MAX_HOTSPOTOV];
-static int pocet_hotspotov;
+#define MENO_ZNACKY "bmqol_hotspot"
+#define ZN 21                                   /* veľkosť krúžku */
+typedef struct { int x, y, vychod; } Hotspot;
+static Hotspot hotspoty[MAX_HOTSPOTOV], zobrazene[MAX_HOTSPOTOV];
+static int pocet_hotspotov, pocet_zobrazenych;
+static unsigned char sablona_dvere[32], sablona_kruh[32];  /* šablóna obrázka (29 B): š, v, bity, x, y, pixely, typ */
+static int sablony;                             /* 0 = nepripravené, 1 = krúžok, 2 = krúžok aj dvere */
+static unsigned kruh_pixely[ZN * ZN];           /* 32 bit: B, G, R, 100 (purpurová = priehľadná) */
+
+static unsigned farba_znacky(int dx, int dy)
+{
+    int r2 = dx * dx + dy * dy;
+    if (r2 <= 2) return 0xF4E2B0;                    /* bodka v strede */
+    if (r2 >= 30 && r2 <= 56) return 0xF4E2B0;       /* krúžok (svetlá zlatá) */
+    if ((r2 >= 20 && r2 < 30) || (r2 > 56 && r2 <= 72) || (r2 > 2 && r2 <= 6)) return 0x201408;   /* tmavý lem */
+    return 0xFF00FF;
+}
+
+static void priprav_sablony(void)
+{
+    if (sablony) return;
+    for (int y = 0; y < ZN; y++)
+        for (int x = 0; x < ZN; x++) kruh_pixely[y * ZN + x] = 0x64000000u | farba_znacky(x - ZN / 2, y - ZN / 2);
+    memset(sablona_kruh, 0, sizeof sablona_kruh);
+    *(int *)(sablona_kruh + 0) = ZN; *(int *)(sablona_kruh + 4) = ZN; *(int *)(sablona_kruh + 8) = 32;
+    *(unsigned **)(sablona_kruh + 0x14) = kruh_pixely;
+    sablony = 1;
+    memset(sablona_dvere, 0, sizeof sablona_dvere);       /* ikona východu z tabulátora (načíta hra z archívov) */
+    if (((int (__cdecl *)(void *, const char *))0x444f66)(sablona_dvere, "kurzor_dvere.flc") == 0 &&
+        *(int *)sablona_dvere > 0 && *(int *)(sablona_dvere + 8) == 32 && *(int *)(sablona_dvere + 0x14)) sablony = 2;
+    loguj("sablony znaciek %d (dvere %dx%d)", sablony, *(int *)sablona_dvere, *(int *)(sablona_dvere + 4));
+}
 
 static void zbieraj_hotspoty(void)
 {
@@ -177,12 +214,10 @@ static void zbieraj_hotspoty(void)
     pocet_hotspotov = 0;
     if (!s) return;
     unsigned char *prvy = *(unsigned char **)(s + 0x40 + 0x28), *o = prvy;
-    unsigned char *pod_kurzorom = *(unsigned char **)(s + 0x5ed);
     int n = 0;
     while (o && n++ < 1000 && pocet_hotspotov < MAX_HOTSPOTOV) {
         unsigned char *reg = *(unsigned char **)(o + 0x72), *nazov = *(unsigned char **)(o + 0x7a);
-        if (I32(o, 0x34) && reg && nazov && nazov[0] && !zacina((char *)o + 8, "inv.") && o != VYBRANY_PREDMET &&
-            o != pod_kurzorom) {             /* objekt pod kurzorom má svoj názov hore – značka by bola pod kurzorom */
+        if (I32(o, 0x34) && reg && nazov && nazov[0] && !zacina((char *)o + 8, "inv.") && o != VYBRANY_PREDMET) {
             /* inverzia prepočtu z hit-testu 0x4034b0: región = bod - animácia + obj[0x3a] - obj[0x42] */
             int x = *(short *)reg + I32(o, 0x42), y = *(short *)(reg + 2) + I32(o, 0x46);
             unsigned char *anim = *(unsigned char **)(o + 0x7e), *post = *(unsigned char **)(o + 0x82);
@@ -191,9 +226,11 @@ static void zbieraj_hotspoty(void)
                 unsigned char *a = *(unsigned char **)(*(unsigned char **)(post + 0x36a) + 0x61);
                 x += I32(a, 0x37e) - I32(o, 0x3a); y += I32(a, 0x382) - I32(o, 0x3e);
             }
-            x -= I32(s, 0x5d5); y -= I32(s, 0x5d9);
-            if (x >= 0 && x < 800 && y >= 0 && y < 600) {
-                hotspoty[pocet_hotspotov].x = x; hotspoty[pocet_hotspotov].y = y; pocet_hotspotov++;
+            int sx = x - I32(s, 0x5d5), sy = y - I32(s, 0x5d9);       /* na obrazovke */
+            if (sx >= 0 && sx < 800 && sy >= 0 && sy < 600) {
+                Hotspot *h = &hotspoty[pocet_hotspotov++];
+                h->x = x; h->y = y;                                   /* súradnice scény */
+                h->vychod = *(void **)(o + 0xe1) != 0;               /* má klávesovú obsluhu (tabulátor) */
             }
         }
         o = *(unsigned char **)o;
@@ -201,11 +238,45 @@ static void zbieraj_hotspoty(void)
     }
 }
 
-/* Značka: krúžok (polomer 7, hrúbka 2) svetlej farby s tmavým lemom a bodkou v strede. Kreslí sa do zadného
- * povrchu tesne pred Blt na obrazovku a hneď potom sa pôvodné pixely vrátia (hra prekresľuje len zmeny). */
-#define ZN 21                        /* veľkosť štvorca značky */
-static unsigned zaloha_pixelov[MAX_HOTSPOTOV][ZN * ZN];
+/* Naše animácie v aktuálnej scéne (podľa mena). */
+static int najdi_znacky(unsigned char *s, unsigned char **out, int max)
+{
+    unsigned char *prvy = *(unsigned char **)(s + 0x80 + 0x28), *a = prvy;
+    int n = 0, k = 0;
+    while (a && k++ < 5000) {
+        if (!lstrcmpA((char *)a + 0x41, MENO_ZNACKY) && n < max) out[n++] = a;
+        a = *(unsigned char **)a;
+        if (a == prvy) break;
+    }
+    return n;
+}
 
+static void znacky_tik(void)
+{
+    unsigned char *s = SCENA;
+    if (!s) return;
+    int chce = cfg_hotspoty && drzi(VK_SPACE) && hra_v_scene() && !rec_bezi();
+    if (chce) zbieraj_hotspoty(); else pocet_hotspotov = 0;
+    unsigned char *nase[MAX_HOTSPOTOV * 2];
+    int n = najdi_znacky(s, nase, MAX_HOTSPOTOV * 2);
+    if (n == pocet_zobrazenych && pocet_hotspotov == pocet_zobrazenych &&
+        rovnake(hotspoty, zobrazene, pocet_hotspotov * (int)sizeof(Hotspot))) return;     /* bez zmeny */
+    for (int i = 0; i < n; i++) ((void (__cdecl *)(unsigned char *, unsigned char **))0x406b31)(s, &nase[i]);
+    pocet_zobrazenych = 0;
+    if (!pocet_hotspotov) return;
+    priprav_sablony();
+    for (int i = 0; i < pocet_hotspotov; i++) {
+        unsigned char t[32];
+        kopiruj(t, hotspoty[i].vychod && sablony == 2 ? sablona_dvere : sablona_kruh, 32);
+        *(int *)(t + 0xc) = hotspoty[i].x - *(int *)t / 2;          /* stred značky na strede regiónu */
+        *(int *)(t + 0x10) = hotspoty[i].y - *(int *)(t + 4) / 2;
+        ((unsigned char *(__cdecl *)(unsigned char *, void *, int, int, const char *))0x406932)(s, t, -9, 0, MENO_ZNACKY);
+    }
+    kopiruj(zobrazene, hotspoty, pocet_hotspotov * (int)sizeof(Hotspot));
+    pocet_zobrazenych = pocet_hotspotov;
+}
+
+/* ---------- zámok zadného povrchu (vyhladzovanie) ---------- */
 typedef struct { unsigned char b[124]; } DDSD2;     /* DDSURFACEDESC2: dwSize 0, lPitch 0x10, lpSurface 0x24, bity 0x54 */
 typedef long (__stdcall *fn_lock)(void *, RECT *, DDSD2 *, unsigned, void *);
 typedef long (__stdcall *fn_unlock)(void *, RECT *);
@@ -221,40 +292,6 @@ static int zamkni(DDSD2 *d)
     return 1;
 }
 static void odomkni(void) { void *p = ZADNY_POVRCH; ((fn_unlock)(*(void ***)p)[32])(p, 0); }
-
-static unsigned farba_znacky(int dx, int dy)
-{
-    int r2 = dx * dx + dy * dy;
-    if (r2 <= 2) return 0xFFF4E2B0;                    /* bodka v strede */
-    if (r2 >= 30 && r2 <= 56) return 0xFFF4E2B0;       /* krúžok (svetlá zlatá) */
-    if ((r2 >= 20 && r2 < 30) || (r2 > 56 && r2 <= 72) || (r2 > 2 && r2 <= 6)) return 0xFF201408;   /* tmavý lem */
-    return 0;
-}
-
-static void kresli_znacky(int obnov)
-{
-    DDSD2 d;
-    if (!pocet_hotspotov || !zamkni(&d)) return;
-    int pitch = *(int *)(d.b + 0x10);
-    unsigned char *pix = *(unsigned char **)(d.b + 0x24);
-    for (int i = 0; i < pocet_hotspotov; i++) {
-        for (int dy = 0; dy < ZN; dy++) {
-            int y = hotspoty[i].y + dy - ZN / 2;
-            if (y < 0 || y >= 600) continue;
-            unsigned *riadok = (unsigned *)(pix + y * pitch);
-            for (int dx = 0; dx < ZN; dx++) {
-                int x = hotspoty[i].x + dx - ZN / 2;
-                if (x < 0 || x >= 800) continue;
-                unsigned *z = &zaloha_pixelov[i][dy * ZN + dx];
-                if (obnov) { riadok[x] = *z; continue; }
-                *z = riadok[x];
-                unsigned f = farba_znacky(dx - ZN / 2, dy - ZN / 2);
-                if (f) riadok[x] = f;
-            }
-        }
-    }
-    odomkni();
-}
 
 /* ---------- zapamätané nastavenia (platia bez ohľadu na uloženú hru) ---------- */
 /* Celočíselné systémové premenné z tabuľky 0x48d470: meno, ukazovateľ na hodnotu, funkcia pri zmene. */
@@ -298,8 +335,8 @@ static void obnov_nastavenia(const char *preco)
     }
 }
 
-/* ---------- preskakovanie (ESC / medzerník, keď hráč nemá kontrolu) ---------- */
-/* Stlačenie: hra natívne preskočí práve hovorenú repliku; doplnok potom „pretáča“ – logika nečaká na tik,
+/* ---------- preskakovanie (ESC, keď hráč nemá kontrolu; medzerník preskočí len jednu repliku – natívne) ---------- */
+/* ESC: hra natívne preskočí práve hovorenú repliku; doplnok potom „pretáča“ – logika nečaká na tik,
  * snímky sa (okrem jednej za 100 ms) neposielajú na obrazovku a jednorazové zvuky (nie slučky, nie reč) sa zastavia,
  * aby skript nečakal na ich dohranie (napr. hudba pod rozprávačom) – až kým nezačne ďalšia replika alebo hráč
  * nedostane kontrolu. Držanie: pokračuje cez ďalšie repliky. */
@@ -345,9 +382,20 @@ static void zastav_jednorazove_zvuky(void)
     }
 }
 
+/* Práve niekto hovorí: niektorý obsadený kanál prehráva vzorku repliky 0x49ef58. */
+static int rec_bezi(void)
+{
+    int n = *(int *)0x4904c8;
+    for (int i = 0; i < n && i < 64; i++) {
+        unsigned char *k = (unsigned char *)0x59afe8 + 16 * i;
+        if (*(int *)(k + 4) && *(unsigned char **)(k + 0xc) == (unsigned char *)0x49ef58) return 1;
+    }
+    return 0;
+}
+
 static void preskakovanie_tik(void)
 {
-    int drzane = cfg_preskakovanie && (drzi(VK_ESCAPE) || drzi(VK_SPACE));
+    int drzane = cfg_preskakovanie && drzi(VK_ESCAPE);
     if (drzane && !preskakuje) spusti_preskok();
     if (!preskakuje) return;
     if (!bez_kontroly() || GetTickCount() - preskok_start > 60000 ||
@@ -498,8 +546,7 @@ static int __cdecl hra_tik(void)
     if (prvy_tik) { prvy_tik = 0; obnov_nastavenia("start"); }
     if (esc_ziadost) { esc_ziadost = 0; if (hra_v_scene()) otvor_ponuku(); }
     else schovaj_kolieska();
-    if (cfg_hotspoty && drzi(VK_SPACE) && hra_v_scene()) zbieraj_hotspoty();
-    else pocet_hotspotov = 0;
+    znacky_tik();
     preskakovanie_tik();
     ladenie.udalosti[4] = preskakuje;
     if (cfg_koliesko) koliesko_tik();
@@ -513,8 +560,13 @@ static void __cdecl klaves_dole(WPARAM w, LPARAM l)
     ladenie.udalosti[1] = (int)w;
     loguj("klaves %x opak %d scena %s pouz %d", (int)w, opakovanie, SCENA ? (char *)SCENA : "-", POUZIVATEL_POVOLENY());
     if (w == VK_ESCAPE && cfg_esc_ponuka && hra_v_scene()) { if (!opakovanie) esc_ziadost = 1; return; }
-    if (w == VK_SPACE && cfg_hotspoty && hra_v_scene()) return;      /* hotspoty sa zbierajú v tiku */
-    if ((w == VK_ESCAPE || w == VK_SPACE) && !opakovanie && bez_kontroly()) spusti_preskok();   /* + pôvodné preskočenie */
+    if (w == VK_SPACE && cfg_hotspoty && hra_v_scene() && !rec_bezi()) return;   /* hotspoty sa zbierajú v tiku */
+    if (cfg_preskakovanie && bez_kontroly()) {
+        /* rozhovor / animácia: ESC = preskočenie repliky + pretáčanie po ďalšiu repliku, medzerník = len jedna
+         * replika (bez opakovania pri držaní), ostatné klávesy nič (hra by nimi tiež preskakovala repliky) */
+        if (w == VK_ESCAPE) { if (!opakovanie) spusti_preskok(); }
+        else if (w != VK_SPACE || opakovanie) return;
+    }
     if ((w == VK_F5 || w == VK_F8) && cfg_skratky && !opakovanie) { skratka_ziadost = w == VK_F5 ? 1 : 2; return; }
     if (w == VK_ESCAPE && !opakovanie && skratka_stav == 3 && SCENA && zacina((char *)SCENA, "1006.101b")) skratka_stav = 4;
     ((void (__cdecl *)(WPARAM, LPARAM))0x43f278)(w, l);
@@ -544,7 +596,7 @@ static int __cdecl nacitaj_hru(int slot)
 /* Zobrazenie (Blt zadného povrchu na obrazovku). */
 static void (__cdecl *zobraz_povodne)(void);
 /* ---------- vyhladenie hrán pred zväčšením (FXAA nad snímkou 800×600) ---------- */
-/* [Video] Smoothing: 0 = vypnuté, 1 = FXAA. Snímka sa skopíruje (zdroj filtra aj záloha), výsledok sa zapíše do
+/* [Video] Smoothing: 0 = vypnuté, 1 = FXAA na postavách, 2 = FXAA na celej ploche scény (nikdy ponuky a texty). Snímka sa skopíruje (zdroj filtra aj záloha), výsledok sa zapíše do
  * zadného povrchu, po Blt na obrazovku sa pôvodná snímka vráti (hra prekresľuje len zmenené časti). */
 static int cfg_vyhladenie, cfg_fxaa_sila, cfg_fxaa_prah, cfg_fxaa_min;   /* sila subpixelového vyhladenia v % (FXAA 3.11: 75), prahy hrany */
 static unsigned snimka[600][800], vystup[600][800];
@@ -563,6 +615,47 @@ static void fxaa_jas(int y0, int y1)
 }
 
 static volatile LONG pocet_hran;
+#define MAX_OBLASTI 16
+static RECT oblasti[MAX_OBLASTI];
+static int pocet_oblasti;
+
+/* Obdĺžniky na vyhladenie: Smoothing=1 – postavy (animácie scény s ukazovateľom na postavu +0x61; obdĺžnik ako
+ * pri prekresľovaní v 0x406b31: x = post[0x4a] + post[0x37e], y = post[0x4e] + post[0x382], š = post[0x52],
+ * v = post[0x56], mínus posun scény), Smoothing=2 – celá plocha scény (bez horného a dolného pásu s textami). */
+static int zbieraj_oblasti(void)
+{
+    unsigned char *s = SCENA;
+    pocet_oblasti = 0;
+    if (cfg_vyhladenie == 2) { RECT r = {0, 45, 800, 544}; oblasti[pocet_oblasti++] = r; return 1; }
+    unsigned char *prvy = *(unsigned char **)(s + 0x80 + 0x28), *a = prvy;
+    int k = 0;
+    while (a && k++ < 5000 && pocet_oblasti < MAX_OBLASTI) {
+        unsigned char *p = *(unsigned char **)(a + 0x61);
+        const char *meno = (const char *)a + 0x41;
+        int x = 0, y = 0, w = 0, h = 0;
+        if (p) {                                        /* NPC: obdĺžnik z údajov postavy */
+            x = I32(p, 0x4a) + I32(p, 0x37e) - I32(s, 0x5d5); y = I32(p, 0x4e) + I32(p, 0x382) - I32(s, 0x5d9);
+            w = I32(p, 0x52); h = I32(p, 0x56);
+        } else if (!*(void **)(a + 0x71) && I32(a, 0xc) > 0 && meno[0] && !obsahuje(meno, ".bmp") &&
+                   !obsahuje(meno, ".flc") && lstrcmpA(meno, "animation") && lstrcmpA(meno, "mouse pic") &&
+                   lstrcmpA(meno, "BWWorkArea") && lstrcmpA(meno, MENO_ZNACKY)) {
+            /* hlavná postava: pomenovaná animácia bez vlastníckeho objektu (napr. 108f.1090) */
+            x = I32(a, 0x1c) - I32(s, 0x5d5); y = I32(a, 0x20) - I32(s, 0x5d9); w = I32(a, 0x10); h = I32(a, 0x14);
+            if (w > 400 || h > 500) w = 0;
+        }
+        {
+            if (w > 0 && h > 0 && w <= 800 && h <= 600 && x < 800 && y < 600 && x + w > 0 && y + h > 0) {
+                RECT r = {x - 2, y - 2, x + w + 2, y + h + 2};
+                if (r.top < 45) r.top = 45;                 /* texty hore a dole sa nevyhladzujú */
+                if (r.bottom > 544) r.bottom = 544;
+                if (r.top < r.bottom) oblasti[pocet_oblasti++] = r;
+            }
+        }
+        a = *(unsigned char **)a;
+        if (a == prvy) break;
+    }
+    return pocet_oblasti;
+}
 static void fxaa_pas(int y0, int y1)
 {
     if (y0 < 1) y0 = 1;
@@ -571,10 +664,13 @@ static void fxaa_pas(int y0, int y1)
     #define KROKOV 7
     const float sub = cfg_fxaa_sila / 100.0f;
     int hran = 0;
-    for (int y = y0; y < y1; y++) {
+    for (int r = 0; r < pocet_oblasti; r++) {           /* len vo vybraných obdĺžnikoch (postavy / plocha scény) */
+    int ry0 = oblasti[r].top > y0 ? oblasti[r].top : y0, ry1 = oblasti[r].bottom < y1 ? oblasti[r].bottom : y1;
+    int rx0 = oblasti[r].left > 1 ? oblasti[r].left : 1, rx1 = oblasti[r].right < 799 ? oblasti[r].right : 799;
+    for (int y = ry0; y < ry1; y++) {
         unsigned *riadok = vystup[y];
         const unsigned char *jh = jas[y - 1], *js = jas[y], *jd = jas[y + 1];
-        for (int x = 1; x < 799; x++) {
+        for (int x = rx0; x < rx1; x++) {
             /* rýchle vylúčenie pixelov bez hrany v celých číslach (prah: max(SmoothingThresholdMin, SmoothingThreshold % maxima)) */
             int iM = js[x], iN = jh[x], iS = jd[x], iW = js[x - 1], iE = js[x + 1];
             int imx = iM, imn = iM;
@@ -633,6 +729,7 @@ static void fxaa_pas(int y0, int y1)
             zmeneny[y] = 1;
         }
     }
+    }
     InterlockedExchangeAdd(&pocet_hran, hran);
 }
 
@@ -685,12 +782,15 @@ static void fxaa(unsigned char *pix, int pitch)
     for (int y = 0; y < 600; y++) if (zmeneny[y]) memcpy(pix + y * pitch, vystup[y], 800 * 4);
     ladenie.udalosti[6] = pocet_hran;
     ladenie.udalosti[10] = pocet_vlakien;
+    ladenie.udalosti[12] = pocet_oblasti;
+    if (pocet_oblasti) { ladenie.udalosti[13] = oblasti[0].left; ladenie.udalosti[14] = oblasti[0].top;
+                         ladenie.udalosti[15] = oblasti[0].right; ladenie.udalosti[16] = oblasti[0].bottom; }
 }
 
 static int vyhlad_snimku(void)
 {
     DDSD2 d;
-    if (!cfg_vyhladenie || FILM_BEZI || !SCENA || !zamkni(&d)) return 0;
+    if (!cfg_vyhladenie || FILM_BEZI || !herna_scena() || !zbieraj_oblasti() || !zamkni(&d)) return 0;
     LARGE_INTEGER t[4]; QueryPerformanceCounter(&t[0]);
     int pitch = *(int *)(d.b + 0x10);
     unsigned char *pix = *(unsigned char **)(d.b + 0x24);
@@ -730,11 +830,8 @@ static void __cdecl zobraz(void)
     LARGE_INTEGER t0, t1; QueryPerformanceCounter(&t0);
     int vyhladene = vyhlad_snimku();
     QueryPerformanceCounter(&t1); ladenie.udalosti[5] = (int)(t1.QuadPart - t0.QuadPart);
-    int n = pocet_hotspotov;
-    if (n) kresli_znacky(0);
     zobraz_povodne();
-    if (vyhladene) obnov_snimku();            /* vráti aj pixely pod značkami */
-    else if (n) kresli_znacky(1);
+    if (vyhladene) obnov_snimku();
 }
 
 /* Akcia „use“ na objekte (ľavý klik): 0x4311f7(objekt, x, y) – na prieskum. */
