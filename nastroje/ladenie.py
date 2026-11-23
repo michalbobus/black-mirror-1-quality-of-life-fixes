@@ -1,4 +1,4 @@
-"""Ladiaci kanál doplnku DDraw.dll (štruktúra `ladenie`): volanie funkcií hry v hernom vlákne pri ďalšom tiku.
+"""Ladiaci kanál doplnku DDraw.dll (štruktúra `ladenie`): volanie funkcií hry v hernom vlákne pri ďalšom kroku.
   python ladenie.py call ADRESA [arg ...]   – arg: číslo (0x..), alebo "s:text" (text sa uloží do bufferu, odovzdá sa adresa)
   python ladenie.py udalosti                – počítadlá z hákov"""
 import sys, struct, time, os
@@ -27,7 +27,7 @@ class Kanal:
             if struct.unpack("<i", pamat.citaj(self.h, self.a, 4))[0] == 0:
                 return struct.unpack("<i", pamat.citaj(self.h, self.a + 44, 4))[0]
             time.sleep(0.01)
-        raise TimeoutError("hra príkaz nevykonala (beží tik?)")
+        raise TimeoutError("hra príkaz nevykonala (beží krok?)")
     def udalosti(self):
         return struct.unpack("<64i", pamat.citaj(self.h, self.a + 48 + 256, 256))
 

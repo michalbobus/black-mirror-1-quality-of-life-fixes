@@ -2,7 +2,7 @@
  * (doterajší doplnok: filmy na celú šírku, plynulý kurzor, citlivosť) a ten ďalej na dgddraw.dll (dgVoodoo2).
  *
  * Háky (v pamäti agds.exe, exe na disku sa nemení; pred zápisom sa overia pôvodné bajty):
- *   0x402e21  call 0x431cf8   – začiatok tiku logiky (25/s, herné vlákno): hra_tik()
+ *   0x402e21  call 0x431cf8   – začiatok kroku logiky (25/s, herné vlákno): hra_krok()
  *   0x440e9d  call 0x43f278   – WM_KEYDOWN v okennej procedúre: klaves_dole()
  *   0x44112b  call [DefWindowProcA] – ostatné správy okna (WM_MOUSEWHEEL): okno_ine()
  *   0x42e416, 0x43a228  call 0x433708 – načítanie uloženej hry: po ňom sa vrátia zapamätané nastavenia
@@ -17,7 +17,7 @@
 #define SCENA          (*(unsigned char **)0x49eb1c)     /* objekt aktuálnej obrazovky: +0 meno, +0x40 zoznam objektov */
 #define HWND_HRY       (*(HWND *)0x5850e8)
 #define FILM_BEZI      (*(int *)0x58512c)
-#define MYS_X          (*(int *)0x506ff0)                /* poloha myši v súradniciach hry (po tiku + posun scény) */
+#define MYS_X          (*(int *)0x506ff0)                /* poloha myši v súradniciach hry (po kroku + posun scény) */
 #define MYS_Y          (*(int *)0x506fa8)
 #define VYBRANY_PREDMET (*(unsigned char **)0x49f3e0)    /* predmet na kurzore */
 #define ZADNY_POVRCH   (*(IUnknown **)0x597e60)          /* IDirectDrawSurface7, systémová pamäť (videomem=0) */
@@ -99,7 +99,7 @@ static void *hak_zaciatok(unsigned adresa, const unsigned char *ocakavane, int n
     return zapis(p, b, n) ? m : 0;
 }
 
-/* ---------- ladiaci kanál: Python zapíše príkaz, doplnok ho vykoná v hernom vlákne pri ďalšom tiku ---------- */
+/* ---------- ladiaci kanál: Python zapíše príkaz, doplnok ho vykoná v hernom vlákne pri ďalšom kroku ---------- */
 typedef struct {
     volatile int prikaz;        /* 1 = zavolaj funkciu `funkcia` (cdecl) s `argumenty`, potom 0 */
     unsigned funkcia;
@@ -111,7 +111,7 @@ typedef struct {
 } Ladenie;
 __declspec(dllexport) Ladenie ladenie;
 
-static void ladenie_tik(void)
+static void ladenie_krok(void)
 {
     if (ladenie.prikaz != 1) return;
     typedef int (__cdecl *f8)(int, int, int, int, int, int, int, int);
@@ -168,9 +168,9 @@ static void schovaj_kolieska(void)
 }
 
 static int rec_bezi(void);
-/* Značky sa po stlačení medzerníka ukážu na rovnaký čas ako ikony tabulátora: 2,04 s = 50 tikov (zmerané). */
-#define TIKY_HOTSPOTOV 50
-static unsigned pocet_tikov, hotspoty_do;
+/* Značky sa po stlačení medzerníka ukážu na rovnaký čas ako ikony tabulátora: 2,04 s = 50 krokov (zmerané). */
+#define KROKY_HOTSPOTOV 50
+static unsigned pocet_krokov, hotspoty_do;
 
 /* ---------- hotspoty (medzerník) ---------- */
 /* Značky sú animácie scény (zoznam scéna+0x80, ako kurzor), takže ich hra kreslí sama – pod kurzor (poradie −9,
@@ -254,11 +254,11 @@ static int najdi_znacky(unsigned char *s, unsigned char **out, int max)
     return n;
 }
 
-static void znacky_tik(void)
+static void znacky_krok(void)
 {
     unsigned char *s = SCENA;
     if (!s) return;
-    int chce = cfg_hotspoty && pocet_tikov < hotspoty_do && hra_v_scene() && !rec_bezi();
+    int chce = cfg_hotspoty && pocet_krokov < hotspoty_do && hra_v_scene() && !rec_bezi();
     if (chce) zbieraj_hotspoty(); else pocet_hotspotov = 0;
     unsigned char *nase[MAX_HOTSPOTOV * 2];
     int n = najdi_znacky(s, nase, MAX_HOTSPOTOV * 2);
@@ -339,11 +339,11 @@ static void obnov_nastavenia(const char *preco)
 }
 
 /* ---------- preskakovanie (ESC, keď hráč nemá kontrolu; medzerník preskočí len jednu repliku – natívne) ---------- */
-/* ESC: hra natívne preskočí práve hovorenú repliku; doplnok potom „pretáča“ – logika nečaká na tik,
+/* ESC: hra natívne preskočí práve hovorenú repliku; doplnok potom „pretáča“ – logika nečaká na krok,
  * snímky sa (okrem jednej za 100 ms) neposielajú na obrazovku a jednorazové zvuky (nie slučky, nie reč) sa zastavia,
  * aby skript nečakal na ich dohranie (napr. hudba pod rozprávačom) – až kým nezačne ďalšia replika alebo hráč
  * nedostane kontrolu. Držanie: pokračuje cez ďalšie repliky. */
-static unsigned tik_qpc;            /* QPC tiky jedného tiku logiky (1/25 s) */
+static unsigned krok_qpc;            /* jednotky časovača QPC na jeden krok hry (1/25 s) */
 static int preskakuje;              /* pretáčanie práve beží */
 static volatile int pocet_replik;   /* zvyšuje hák repliky 0x438d58 */
 static int preskok_repliky;         /* pocet_replik pri spustení pretáčania */
@@ -396,7 +396,7 @@ static int rec_bezi(void)
     return 0;
 }
 
-static void preskakovanie_tik(void)
+static void preskakovanie_krok(void)
 {
     int drzane = cfg_preskakovanie && drzi(VK_ESCAPE);
     if (drzane && !preskakuje) spusti_preskok();
@@ -412,7 +412,7 @@ static void preskakovanie_tik(void)
         preskok_repliky = pocet_replik;
     }
     zastav_jednorazove_zvuky();
-    if (tik_qpc) *(LONGLONG *)0x49bda0 -= tik_qpc;          /* logika nečaká na ďalší tik */
+    if (krok_qpc) *(LONGLONG *)0x49bda0 -= krok_qpc;          /* logika nečaká na ďalší krok */
 }
 
 /* ---------- koliesko myši: listovanie predmetmi inventára na kurzore ---------- */
@@ -441,7 +441,7 @@ static void vyber_predmet(void)
 /* Stavy: 0 = nič, 1 = čaká sa, kým sa predmet z kurzora vráti na svoje miesto v poli, 2 = pauza ~0,5 s,
  * 3 = čaká sa, kým sa cieľ pripne na kurzor (inak poistka vráti jeho položku do poľa a výber raz zopakuje),
  * 4 = pauza po výbere. Zárezy počas toho sa hromadia a spracujú naraz (jedno vrátenie + jeden výber). */
-static void koliesko_tik(void)
+static void koliesko_krok(void)
 {
     if (koliesko_stav == 1) {
         if ((VYBRANY_PREDMET || !obsadene(koliesko_drzany)) && --koliesko_cakanie > 0) return;
@@ -505,7 +505,7 @@ static void koliesko_tik(void)
 static int cfg_skratky, skratka_ziadost, skratka_stav, skratka_polozka;
 static DWORD skratka_cas;
 
-static void skratky_tik(void)
+static void skratky_krok(void)
 {
     unsigned char *s = SCENA;
     if (skratka_ziadost) {
@@ -541,20 +541,20 @@ static void skratky_tik(void)
 }
 
 /* ---------- háky ---------- */
-static int prvy_tik = 1;
-static int __cdecl hra_tik(void)
+static int prvy_krok = 1;
+static int __cdecl hra_krok(void)
 {
     ladenie.udalosti[0]++;
-    pocet_tikov++;
-    ladenie_tik();
-    if (prvy_tik) { prvy_tik = 0; obnov_nastavenia("start"); }
+    pocet_krokov++;
+    ladenie_krok();
+    if (prvy_krok) { prvy_krok = 0; obnov_nastavenia("start"); }
     if (esc_ziadost) { esc_ziadost = 0; if (hra_v_scene()) otvor_ponuku(); }
     else schovaj_kolieska();
-    znacky_tik();
-    preskakovanie_tik();
+    znacky_krok();
+    preskakovanie_krok();
     ladenie.udalosti[4] = preskakuje;
-    if (cfg_koliesko) koliesko_tik();
-    skratky_tik();
+    if (cfg_koliesko) koliesko_krok();
+    skratky_krok();
     return ((fn0)0x431cf8)();
 }
 
@@ -564,8 +564,8 @@ static void __cdecl klaves_dole(WPARAM w, LPARAM l)
     ladenie.udalosti[1] = (int)w;
     loguj("klaves %x opak %d scena %s pouz %d", (int)w, opakovanie, SCENA ? (char *)SCENA : "-", POUZIVATEL_POVOLENY());
     if (w == VK_ESCAPE && cfg_esc_ponuka && hra_v_scene()) { if (!opakovanie) esc_ziadost = 1; return; }
-    if (w == VK_SPACE && cfg_hotspoty && hra_v_scene() && !rec_bezi()) {   /* hotspoty sa zbierajú v tiku */
-        hotspoty_do = pocet_tikov + TIKY_HOTSPOTOV;      /* ako tabulátor; opakovanie pri držaní predlžuje */
+    if (w == VK_SPACE && cfg_hotspoty && hra_v_scene() && !rec_bezi()) {   /* hotspoty sa zbierajú v kroku */
+        hotspoty_do = pocet_krokov + KROKY_HOTSPOTOV;      /* ako tabulátor; opakovanie pri držaní predlžuje */
         return;
     }
     if (cfg_preskakovanie && bez_kontroly()) {
@@ -894,11 +894,11 @@ static void __cdecl nastav_premennu(const char *meno, int hodnota)
 
 static void instaluj(void)
 {
-    /* overenie verzie hry: bajty na začiatku tiku logiky */
-    static const unsigned char tik[] = {0x55, 0x8b, 0xec, 0x83, 0xec, 0x48};
-    if (!rovnake((void *)0x402dfb, tik, 6)) { loguj("ina verzia agds.exe"); return; }
+    /* overenie verzie hry: bajty na začiatku kroku logiky */
+    static const unsigned char krok[] = {0x55, 0x8b, 0xec, 0x83, 0xec, 0x48};
+    if (!rovnake((void *)0x402dfb, krok, 6)) { loguj("ina verzia agds.exe"); return; }
 
-    hak_volanie(0x402e21, 0x431cf8, hra_tik);
+    hak_volanie(0x402e21, 0x431cf8, hra_krok);
     hak_volanie(0x440e9d, 0x43f278, klaves_dole);
     hak_volanie_iat(0x44112b, 0x485274, okno_ine);
     hak_volanie(0x42e416, 0x433708, nacitaj_hru);
@@ -928,7 +928,7 @@ static void instaluj(void)
     cfg_fxaa_min = ini_cislo("Video", "SmoothingThresholdMin", 16);     /* najmenší rozdiel jasu 0–255 */
     nacitaj_zapamatane();
     LARGE_INTEGER f; QueryPerformanceFrequency(&f);
-    if (!f.HighPart) tik_qpc = f.LowPart / 25;
+    if (!f.HighPart) krok_qpc = f.LowPart / 25;
     loguj("haky vlozene");
 }
 

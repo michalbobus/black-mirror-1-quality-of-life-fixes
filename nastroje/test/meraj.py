@@ -5,7 +5,7 @@ u = ctypes.windll.user32; u.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 pid = pamat.pid_hry(); h = pamat.otvor(pid)
 moj = [b for b, n, m in pamat.moduly32(pid) if m.lower() == "ddraw.dll"][0]
 POCET = moj + 0x1000 + 0x800 + 0x4C
-print("hak kurzor", pamat.citaj(h, 0x43cfee, 1).hex(), "tik", pamat.citaj(h, 0x402fa1, 1).hex(), "film", pamat.citaj(h, 0x44198e, 1).hex())
+print("hak kurzor", pamat.citaj(h, 0x43cfee, 1).hex(), "krok", pamat.citaj(h, 0x402fa1, 1).hex(), "film", pamat.citaj(h, 0x44198e, 1).hex())
 r = lambda a: struct.unpack("<i", pamat.citaj(h, a, 4))[0]
 p0, t0 = r(POCET), r(0x597e8c); z = time.perf_counter()
 while time.perf_counter() - z < 3:

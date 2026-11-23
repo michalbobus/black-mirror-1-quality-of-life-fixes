@@ -7,24 +7,24 @@ Ako to funguje:
     (exe na disku sa nemení):
       0x44198e  – štart filmu (hra práve uložila obdĺžnik filmu do 0x58510c..0x585118)
       0x441fea  – začiatok funkcie konca filmu
-      0x43cfee  – obal SleepEx(0), volá sa len v slučke, kde logika čaká na ďalší tik (25 tikov/s)
+      0x43cfee  – obal SleepEx(0), volá sa len v slučke, kde logika čaká na ďalší krok (25 krokov/s)
   * [Movies] FullWidth=1: pri štarte filmu, ktorý zaberá celú šírku a má letterbox, nastaví výrez
     (DisplayROI) dgVoodoo na obdĺžnik filmu – dgVoodoo ho zväčší na celú šírku obrazovky; na konci výrez vráti.
     Výrez dgVoodoo 2.87.6: RECT v dgddraw.dll na RVA 0x6c460, 0x18 B pred ním šírka a výška režimu (800, 600).
-  * [Cursor] Fps=60: počas čakania na tik najviac Fps-krát za sekundu prečíta polohu myši (GetCursorPos;
+  * [Cursor] Fps=60: počas čakania na krok najviac Fps-krát za sekundu prečíta polohu myši (GetCursorPos;
     dgVoodoo drží kurzor v súradniciach hry 800x600). Ak sa pohla a hra je v scéne, zapíše ju ako
-    WM_MOUSEMOVE (0x507010/14), prepočíta ako tik (0x417a8d + posun scény), presunie objekt kurzora
-    (0x4094de(0)), prekreslí scénu (0x426c43) a zobrazí ju (0x43e78f). Logika hry ostáva na 25 tikoch/s.
-    Prekreslenie sa vynechá, ak do ďalšieho tiku ostávajú menej ako 2 ms (čas tiku: QPC v 0x49bda0).
-  * Spolu s kurzorom: 0x402fa1 – plánovanie tiku. Hra po čakaní nastaví „posledný tik = teraz“, takže každé
+    WM_MOUSEMOVE (0x507010/14), prepočíta ako krok (0x417a8d + posun scény), presunie objekt kurzora
+    (0x4094de(0)), prekreslí scénu (0x426c43) a zobrazí ju (0x43e78f). Logika hry ostáva na 25 krokoch/s.
+    Prekreslenie sa vynechá, ak do ďalšieho kroku ostávajú menej ako 2 ms (čas kroku: QPC v 0x49bda0).
+  * Spolu s kurzorom: 0x402fa1 – plánovanie kroku. Hra po čakaní nastaví „posledný krok = teraz“, takže každé
     oneskorenie (napr. zobrazenie čakajúce na vsync) hru natrvalo spomalí. Hák nastaví „posledný = plánovaný čas“
-    (oneskorenie sa dorovná pri ďalšom tiku); ak je oneskorenie aspoň 1 tik (načítanie a pod.), použije „teraz“. Pozor: bez videomem=0 v agds.cfg trvá prekreslenie ~33 ms a hru spomalí.
-    Fps=0 -> prekresľovanie a hák plánovania tiku sa nevložia.
+    (oneskorenie sa dorovná pri ďalšom kroku); ak je oneskorenie aspoň 1 krok (načítanie a pod.), použije „teraz“. Pozor: bez videomem=0 v agds.cfg trvá prekreslenie ~33 ms a hru spomalí.
+    Fps=0 -> prekresľovanie a hák plánovania kroku sa nevložia.
   * [Cursor] Sensitivity=0.7 (0.1..1.0): násobok pohybu myši, 1.0 = ako pôvodná hra. V tom istom háku (0x43cfee)
     sa pri každom volaní porovná GetCursorPos s naposledy nastavenou polohou, rozdiel sa vynásobí citlivosťou
     (presnosť 1/1000 px, zlomky sa zachovajú) a kurzor sa presunie SetCursorPos. Len keď je hra v popredí
     (GetForegroundWindow = okno hry 0x5850e8). Poloha sa znova načíta bez násobenia, keď hru presunie kurzor sama
-    (hák na jej SetCursorPos v 0x43d203), po návrate do hry a po pauze dlhšej ako 5 tikov.
+    (hák na jej SetCursorPos v 0x43d203), po návrate do hry a po pauze dlhšej ako 5 krokov.
 
 Použitie:  python zostav_dll.py VYSTUP.dll
 """
@@ -48,9 +48,9 @@ DATA = {
     "BODST": 0x38, "BODST4": 0x3C,          # posledná spracovaná poloha
     "FREKV": 0x40, "FREKV4": 0x44,          # QueryPerformanceFrequency
     "FPS": 0x48,
-    "POCET": 0x4C,       # počet prekreslení kurzora mimo tiku (na meranie)
-    "LIMIT": 0x50,       # QPC tiky od začiatku tiku, po ktorých sa už kurzor neprekresľuje (1/25 s - 2 ms)
-    "TIK": 0x54,         # QPC tiky jedného tiku logiky (1/25 s)
+    "POCET": 0x4C,       # počet prekreslení kurzora mimo kroku (na meranie)
+    "LIMIT": 0x50,       # jednotky QPC od začiatku kroku, po ktorých sa už kurzor neprekresľuje (1/25 s - 2 ms)
+    "KROK": 0x54,         # jednotky časovača QPC na jeden krok hry (1/25 s)
     "CITL": 0x58,        # citlivosť v tisícinách (100..1000), 1000 = bez zmeny
     "RESYNC": 0x5C,      # 1 = znova načítať polohu kurzora (hra ho presunula, návrat do hry...)
     "VX": 0xC0, "VY": 0xC4,              # poloha kurzora v tisícinách pixela
@@ -259,7 +259,7 @@ dm_hak_kurzor:
     jae dm_ochrana
     div ecx
     imul ecx, eax, 20
-    mov dword ptr [ebx + {TIK}], ecx
+    mov dword ptr [ebx + {KROK}], ecx
     imul eax, eax, 19
     mov dword ptr [ebx + {LIMIT}], eax
     mov ecx, dword ptr [ebx + {FPS}]
@@ -282,18 +282,18 @@ dm_bez_fps:
     mov dword ptr [0x43cfef], eax
 
     cmp dword ptr [ebx + {CITL}], 1000
-    jge dm_tik
+    jge dm_krok
     cmp dword ptr [0x43d203], 0x528015ff
-    jne dm_tik
+    jne dm_krok
     cmp word ptr [0x43d207], 0x0048
-    jne dm_tik
+    jne dm_krok
     mov byte ptr [0x43d203], 0xe8
     lea eax, [ebx + {SYNCHAK}]
     sub eax, 0x43d208
     mov dword ptr [0x43d204], eax
     mov byte ptr [0x43d208], 0x90
 
-dm_tik:
+dm_krok:
     cmp dword ptr [ebx + {FPS}], 0
     je dm_ochrana
     cmp dword ptr [0x402fa1], 0x49bda8a1
@@ -301,7 +301,7 @@ dm_tik:
     cmp dword ptr [0x402fa5], 0xbda0a300
     jne dm_ochrana
     mov byte ptr [0x402fa1], 0xe9
-    lea eax, [ebx + {TIKHAK}]
+    lea eax, [ebx + {KROKHAK}]
     sub eax, 0x402fa6
     mov dword ptr [0x402fa2], eax
 
@@ -410,7 +410,7 @@ ku_tu:
     jge ku_fps
     test edx, edx
     jnz ku_cs_sync
-    mov ecx, dword ptr [ebx + {TIK}]
+    mov ecx, dword ptr [ebx + {KROK}]
     lea ecx, [ecx + ecx * 4]
     cmp eax, ecx
     jae ku_cs_sync
@@ -574,7 +574,7 @@ ku_von:
     push 0x43cff3
     ret
 
-tikhak:
+krokhak:
     pushad
     call ti_tu
 ti_tu:
@@ -584,7 +584,7 @@ ti_tu:
     sub eax, dword ptr [ebp - 0x44]
     sbb edx, dword ptr [ebp - 0x40]
     jnz ti_teraz
-    cmp eax, dword ptr [ebx + {TIK}]
+    cmp eax, dword ptr [ebx + {KROK}]
     jae ti_teraz
     mov eax, dword ptr [ebp - 0x44]
     mov dword ptr [0x49bda0], eax
@@ -649,7 +649,7 @@ def preloz():
         posuny["CESTA"] = O_CESTA
         # vstupy hákov = 6 bajtov pred návestím *_tu (pushad + call)
         posuny.update(START=bloky["st_tu"] - 6, KONIEC=bloky["ko_tu"] - 6, KURZOR=bloky["ku_tu"] - 6,
-                      TIKHAK=bloky["ti_tu"] - 6, SYNCHAK=bloky["sy_tu"] - 6)
+                      KROKHAK=bloky["ti_tu"] - 6, SYNCHAK=bloky["sy_tu"] - 6)
         riadky, aktualne = [], None
         for r in KOD.splitlines():
             s = r.strip()
