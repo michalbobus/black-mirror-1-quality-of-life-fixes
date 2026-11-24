@@ -27,6 +27,8 @@
   *Smooth cursor* – the cursor is redrawn 60 times per second instead of 25. The game itself runs at its original speed.
 - **Citlivosť myši** – kurzor je predvolene pomalší (0.7 z pôvodnej rýchlosti), dá sa nastaviť.<br>
   *Mouse sensitivity* – the cursor is slower by default (0.7 of the original speed) and can be adjusted.
+- **Dvojklik = postava hneď v cieli** – po dvojkliku na miesto v scéne sa postava objaví v cieli bez animácie chôdze. Pri dvojkliku na predmet alebo východ je hneď pri ňom a hra pokračuje (prezretie, použitie, prechod do ďalšej scény).<br>
+  *Double-click = character arrives instantly* – after a double-click on a spot in the scene the character appears there without the walking animation. When you double-click an object or an exit, the character is right there and the game goes on (looking, using, moving to the next scene).
 - **Koliesko myši listuje inventárom** – točením kolieska vyberáš predmety z inventára priamo na kurzor (dole = ďalší, hore = predchádzajúci), bez otvárania lišty dole.<br>
   *Mouse wheel cycles the inventory* – scrolling the wheel puts inventory items directly on the cursor (down = next, up = previous) without opening the bar at the bottom.
 
@@ -37,7 +39,7 @@
 | **ESC** v ponuke / in menu | návrat do hry (zo Nastavení, Uložit/Nahrát hru a Tvůrci späť do hlavnej ponuky) | back to the game (from Options, Save/Load and Credits back to the main menu) |
 | **F5** | obrazovka Uložit hru (ESC vráti rovno do hry) | Save game screen (ESC returns straight to the game) |
 | **F8** | obrazovka Nahrát hru (ESC vráti rovno do hry) | Load game screen (ESC returns straight to the game) |
-| **medzerník / Space** v hre / in game | na 2 sekundy (ako Tab, pri držaní stále) ukáže všetky aktívne miesta v scéne: východy ikonou dverí, ostatné miesta krúžkom | shows all hotspots in the scene for 2 seconds (like Tab, permanently while held): exits with a door icon, everything else with a ring |
+| **medzerník / Space** v hre / in game | na 2 sekundy (ako Tab, pri držaní stále) ukáže všetky aktívne miesta v scéne: východy ikonou dverí, ostatné miesta krúžkom; kurzor je nad nimi červený (ako pri Tab) | shows all hotspots in the scene for 2 seconds (like Tab, permanently while held): exits with a door icon, everything else with a ring; the cursor turns red over them (like with Tab) |
 | **medzerník / Space** v rozhovore / in dialogue | preskočí jednu repliku (aj vetu rozprávača) | skips one line (also a narrator sentence) |
 | **ESC** v rozhovore / in dialogue | preskočí repliku aj všetky animácie a hudbu po nej až po ďalšiu repliku | skips the line plus all animations and music after it, up to the next line |
 | **ESC** podržaný / held, v rozhovore / in dialogue | preskočí celý rozhovor až po chvíľu, keď znova ovládaš hru | skips the whole conversation until you are in control again |
@@ -60,11 +62,7 @@ Výrez zväčšený 2×: pôvodná hra (rozmazané zväčšenie so zubatými hra
 
 ![Vyhladenie postáv / Character smoothing](snimky/readme/vyhladenie.png)
 
-Celá scéna – pôvodná hra a hra s úpravami (s úpravami sú aj titulky zapnuté natrvalo):
-
-*The whole scene – original game and the game with improvements (with improvements the subtitles also stay switched on):*
-
-![Salón pred a po / Drawing room before and after](snimky/readme/salon.png)
+![Vyhladenie postáv – stará pani / Character smoothing – old lady](snimky/readme/vyhladenie2.png)
 
 Vyhladzujú sa len postavy v scéne. Titulky, názvy predmetov a ponuky ostávajú presne také ako bez vyhladenia (overené pixel po pixeli, hlavná ponuka je s vyhladením aj bez neho úplne rovnaká):
 
@@ -103,6 +101,7 @@ Inštalácia skopíruje do priečinka hry knižnice `DDraw.dll`, `bm_core.dll`, 
 | `[Controls] HoldToSkip` | 1 | preskakovanie rozhovorov cez ESC a medzerník | skipping dialogue with ESC and Space |
 | `[Controls] SaveLoadKeys` | 1 | F5 = uložiť, F8 = nahrať | F5 = save, F8 = load |
 | `[Controls] WheelInventory` | 1 | koliesko myši listuje inventárom | mouse wheel cycles the inventory |
+| `[Controls] DoubleClickWalk` | 1 | dvojklik = postava hneď v cieli | double-click = character arrives instantly |
 | `[Video] Smoothing` | 1 | vyhladenie: 1 = postavy, 2 = celá scéna, 0 = vypnuté | smoothing: 1 = characters, 2 = whole scene, 0 = off |
 | `[Video] SmoothingThreshold` | 25 | citlivosť vyhladenia (vyššie číslo = menej vyhladených hrán) | smoothing sensitivity (higher = fewer edges smoothed) |
 | `[Settings] Remember` | 1 | pamätať nastavenia bez ohľadu na uloženú hru | remember settings regardless of the saved game |

@@ -6,7 +6,9 @@
  *   0x440e9d  call 0x43f278   – WM_KEYDOWN v okennej procedúre: klaves_dole()
  *   0x44112b  call [DefWindowProcA] – ostatné správy okna (WM_MOUSEWHEEL): okno_ine()
  *   0x42e416, 0x43a228  call 0x433708 – načítanie uloženej hry: po ňom sa vrátia zapamätané nastavenia
- *   0x43e78f  začiatok funkcie zobrazenia (Blt zadného povrchu na obrazovku): značky hotspotov
+ *   0x43e78f  začiatok funkcie zobrazenia (Blt zadného povrchu na obrazovku): vyhladenie, pretáčanie bez snímok
+ *   0x408c5c  začiatok nastavenia kurzora nad objektom: červený kurzor nad východom počas značiek hotspotov
+ *   0x4410c5  call 0x417949   – udalosť dvojkliku (WM_LBUTTONDBLCLK + pustenie): pretočenie chôdze
  *
  * Preklad: doplnok/zostav.bat (zig cc, bez CRT).
  */
@@ -196,6 +198,27 @@ static unsigned farba_znacky(int dx, int dy)
     return 0xFF00FF;
 }
 
+/* Obrázok z archívov hry: 0x444f66 vráti pixely v pamäti, ktorú hra pri ďalšom načítaní obrázka použije znova
+ * (zistené 24. 11. 2026: načítanie červeného kurzora prepísalo pixely ikony dverí), preto sa skopírujú do `pixely`
+ * (najviac `max` pixelov, 32 bit). Vráti 1 pri úspechu. */
+static int nacitaj_obrazok(unsigned char *t, const char *meno, unsigned *pixely, int max)
+{
+    memset(t, 0, 32);
+    if (((int (__cdecl *)(void *, const char *))0x444f66)(t, meno) != 0) return 0;
+    int s = *(int *)t, v = *(int *)(t + 4);
+    unsigned *p = *(unsigned **)(t + 0x14);
+    if (s <= 0 || v <= 0 || s * v > max || *(int *)(t + 8) != 32 || !p) { memset(t, 0, 32); return 0; }
+    /* ako hra (0x419a0e): bez úplne priehľadných stĺpcov vpravo a riadkov dole (purpurová = priehľadná) */
+    int s2 = s, v2 = v;
+    for (; s2 > 1; s2--) { int y = 0; while (y < v && (p[y * s + s2 - 1] & 0xFFFFFF) == 0xFF00FF) y++; if (y < v) break; }
+    for (; v2 > 1; v2--) { int x = 0; while (x < s2 && (p[(v2 - 1) * s + x] & 0xFFFFFF) == 0xFF00FF) x++; if (x < s2) break; }
+    for (int y = 0; y < v2; y++) kopiruj(pixely + y * s2, p + y * s, s2 * 4);
+    *(int *)t = s2; *(int *)(t + 4) = v2;
+    *(unsigned **)(t + 0x14) = pixely;
+    return 1;
+}
+static unsigned dvere_pixely[64 * 64], cerveny_pixely[64 * 64];
+
 static void priprav_sablony(void)
 {
     if (sablony) return;
@@ -205,9 +228,8 @@ static void priprav_sablony(void)
     *(int *)(sablona_kruh + 0) = ZN; *(int *)(sablona_kruh + 4) = ZN; *(int *)(sablona_kruh + 8) = 32;
     *(unsigned **)(sablona_kruh + 0x14) = kruh_pixely;
     sablony = 1;
-    memset(sablona_dvere, 0, sizeof sablona_dvere);       /* ikona východu z tabulátora (načíta hra z archívov) */
-    if (((int (__cdecl *)(void *, const char *))0x444f66)(sablona_dvere, "kurzor_dvere.flc") == 0 &&
-        *(int *)sablona_dvere > 0 && *(int *)(sablona_dvere + 8) == 32 && *(int *)(sablona_dvere + 0x14)) sablony = 2;
+    /* ikona východu z tabulátora (načíta hra z archívov) */
+    if (nacitaj_obrazok(sablona_dvere, "kurzor_dvere.flc", dvere_pixely, 64 * 64)) sablony = 2;
     loguj("sablony znaciek %d (dvere %dx%d)", sablony, *(int *)sablona_dvere, *(int *)(sablona_dvere + 4));
 }
 
@@ -277,6 +299,50 @@ static void znacky_krok(void)
     }
     kopiruj(zobrazene, hotspoty, pocet_hotspotov * (int)sizeof(Hotspot));
     pocet_zobrazenych = pocet_hotspotov;
+}
+
+/* Kurzor nad východom počas značiek: ikona dverí je už vidno ako značka, takže kurzor nad východom bude červený
+ * (kurzor-cerveny.flc, ako nad ostatnými objektmi) – rovnako ako pri tabulátore, kde skript východom dočasne
+ * zmení obrázok kurzora. Doplnok objekty nemení: hák na 0x408c5c (scéna, šablóna kurzora objektu +0x86, meno)
+ * podstrčí červenú šablónu, ak je šablóna objektu ikona dverí. [0x49f01e] = šablóna práve zobrazeného kurzora
+ * objektu (stav 2 v [0x49f404]); hra ju každý krok porovná s +0x86 objektu pod kurzorom a pri rozdiele volá 0x408c5c. */
+static void (__cdecl *kurzor_objektu_povodne)(unsigned char *, unsigned char *, const char *);
+static unsigned char sablona_cerveny[32];
+static int cerveny;                             /* 0 = nenačítaný, 1 = načítaný, −1 = chyba */
+#define KURZOR_OBJEKTU (*(unsigned char **)0x49f01e)
+
+static int znacky_vidno(void) { return pocet_zobrazenych > 0 && pocet_krokov < hotspoty_do; }
+
+static int je_ikona_dveri(unsigned char *t)
+{
+    if (!t || sablony != 2) return 0;
+    int s = *(int *)t, v = *(int *)(t + 4);
+    if (s != *(int *)sablona_dvere || v != *(int *)(sablona_dvere + 4) || *(int *)(t + 8) != 32) return 0;
+    unsigned char *a = *(unsigned char **)(t + 0x14), *b = *(unsigned char **)(sablona_dvere + 0x14);
+    return a && (a == b || rovnake(a, b, s * v * 4));
+}
+
+static void __cdecl kurzor_objektu(unsigned char *s, unsigned char *t, const char *meno)
+{
+    if (znacky_vidno() && je_ikona_dveri(t)) {
+        if (!cerveny) {
+            cerveny = nacitaj_obrazok(sablona_cerveny, "kurzor-cerveny.flc", cerveny_pixely, 64 * 64) ? 1 : -1;
+            loguj("kurzor-cerveny %d (%dx%d)", cerveny, *(int *)sablona_cerveny, *(int *)(sablona_cerveny + 4));
+        }
+        if (cerveny == 1) {
+            if (KURZOR_OBJEKTU == sablona_cerveny && *(int *)0x49f404 == 2) return;      /* už je červený */
+            t = sablona_cerveny;
+        }
+    }
+    kurzor_objektu_povodne(s, t, meno);
+}
+
+/* Po zobrazení značiek: ak je kurzor práve nad východom (dvere), hra ho prekreslí až pri zmene objektu –
+ * vynulovaním [0x49f01e] ho prinúti znova zavolať 0x408c5c (hák ho zmení na červený). */
+static void kurzor_nad_vychodom_krok(void)
+{
+    if (kurzor_objektu_povodne && znacky_vidno() && *(int *)0x49f404 == 2 && je_ikona_dveri(KURZOR_OBJEKTU))
+        KURZOR_OBJEKTU = 0;
 }
 
 /* ---------- zámok zadného povrchu (vyhladzovanie) ---------- */
@@ -415,6 +481,43 @@ static void preskakovanie_krok(void)
     if (krok_qpc) *(LONGLONG *)0x49bda0 -= krok_qpc;          /* logika nečaká na ďalší krok */
 }
 
+/* ---------- dvojklik: postava je hneď v cieli ---------- */
+/* Hra dvojklik pozná sama (WM_LBUTTONDBLCLK → pri pustení tlačidla udalosť 0x50705c namiesto 0x50702c; akcie
+ * doublemove/doubleuse – dvojklik na východ skráti cestu). Na podlahe postava ide normálne. Doplnok po dvojkliku
+ * v hernej scéne chôdzu pretočí: kým hlavná postava ide (stav [0x49be3a] ≠ 0: 1 = chôdza na miesto, 2 = k objektu,
+ * 7 = dvojklik na východ; poloha x/y 0x49be28/0x49be2c), logika nečaká na ďalší krok a na obrazovku sa nič neposiela
+ * – postava sa objaví v cieli (ďalší dej, napr. použitie objektu alebo prechod do inej scény, beží normálne). */
+#define CHODZA (*(int *)0x49be3a)
+static int cfg_dvojklik;
+static int chodza_rezim;            /* 0 = nič, 1 = čaká sa na začiatok chôdze po dvojkliku, 2 = pretáča sa */
+static unsigned chodza_od;
+static unsigned char *chodza_scena;
+
+static void __cdecl dvojklik_mysi(void *udalost)
+{
+    ((void (__cdecl *)(void *))0x417949)(udalost);
+    if (cfg_dvojklik && herna_scena() && hra_v_scene() && !preskakuje) {
+        chodza_rezim = 1; chodza_od = pocet_krokov; chodza_scena = SCENA;
+        loguj("dvojklik %d,%d stav chodze %d", *(int *)0x49be28, *(int *)0x49be2c, CHODZA);
+    }
+}
+
+static void chodza_krok(void)
+{
+    if (!chodza_rezim) return;
+    int ide = CHODZA != 0;
+    if (SCENA != chodza_scena || !herna_scena() || FILM_BEZI || preskakuje ||
+        pocet_krokov - chodza_od > 500 || (!ide && (chodza_rezim == 2 || pocet_krokov - chodza_od > 5))) {
+        loguj("dvojklik koniec po %u krokoch (%d,%d stav %d, scena %s)", pocet_krokov - chodza_od,
+              *(int *)0x49be28, *(int *)0x49be2c, CHODZA, SCENA ? (char *)SCENA : "-");
+        chodza_rezim = 0; return;
+    }
+    if (!ide) return;
+    chodza_rezim = 2;
+    zastav_jednorazove_zvuky();                          /* kroky by inak zazneli naraz */
+    if (krok_qpc) *(LONGLONG *)0x49bda0 -= krok_qpc;      /* logika nečaká na ďalší krok */
+}
+
 /* ---------- koliesko myši: listovanie predmetmi inventára na kurzore ---------- */
 /* Pole inventára 0x578c10: 35 položiek po 0x28 B (meno[32], +0x20 = 1 obsadené). Predmet pripnutý na kurzor sa
  * z poľa vyberie (jeho miesto ostane prázdne) a po vrátení (pravý klik) sa vráti na to isté miesto. */
@@ -551,7 +654,9 @@ static int __cdecl hra_krok(void)
     if (esc_ziadost) { esc_ziadost = 0; if (hra_v_scene()) otvor_ponuku(); }
     else schovaj_kolieska();
     znacky_krok();
+    kurzor_nad_vychodom_krok();
     preskakovanie_krok();
+    chodza_krok();
     ladenie.udalosti[4] = preskakuje;
     if (cfg_koliesko) koliesko_krok();
     skratky_krok();
@@ -834,6 +939,7 @@ static void __cdecl zobraz(void)
         if (t - posledna < 100) { ladenie.udalosti[11]++; return; }
         posledna = t;
     }
+    if (chodza_rezim == 2) return;                      /* pretáčanie chôdze po dvojkliku: nič na obrazovku */
     LARGE_INTEGER t0, t1; QueryPerformanceCounter(&t0);
     int vyhladene = vyhlad_snimku();
     QueryPerformanceCounter(&t1); ladenie.udalosti[5] = (int)(t1.QuadPart - t0.QuadPart);
@@ -904,10 +1010,16 @@ static void instaluj(void)
     hak_volanie(0x42e416, 0x433708, nacitaj_hru);
     hak_volanie(0x43a228, 0x433708, nacitaj_hru);
     hak_volanie(0x42b8af, 0x43a112, nastav_premennu);
+    cfg_dvojklik = ini_cislo("Controls", "DoubleClickWalk", 1);
+    if (cfg_dvojklik) hak_volanie(0x4410c5, 0x417949, dvojklik_mysi);     /* udalosť dvojkliku (0x50705c) */
     static const unsigned char zac_zobraz[] = {0x55, 0x8b, 0xec, 0x81, 0xec, 0xa8, 0x00, 0x00, 0x00};
     zobraz_povodne = hak_zaciatok(0x43e78f, zac_zobraz, 9, zobraz);
     static const unsigned char zac_replika[] = {0x55, 0x8b, 0xec, 0x81, 0xec, 0x90, 0x00, 0x00, 0x00};
     replika_povodne = hak_zaciatok(0x438d58, zac_replika, 9, replika);
+    if (ini_cislo("Controls", "SpaceHotspots", 1)) {
+        static const unsigned char zac_kurzor[] = {0x55, 0x8b, 0xec, 0x83, 0x7d, 0x0c, 0x00};
+        kurzor_objektu_povodne = hak_zaciatok(0x408c5c, zac_kurzor, 7, kurzor_objektu);
+    }
     if (ini_cislo("Debug", "Explore", 0)) {
         static const unsigned char zac_pouzi[] = {0x55, 0x8b, 0xec, 0x83, 0xec, 0x10};
         pouzi_povodne = hak_zaciatok(0x4311f7, zac_pouzi, 6, pouzi);

@@ -28,8 +28,9 @@ a, b, c = (Image.open(os.path.join(PROF, n + ".png")) for n in ("bilinear", "pos
 box = (560, 400, 800, 700)
 panel([zv(a, box), zv(b, box), zv(c, box)],
       ["Pôvodná hra / Original", "Ostrejšie / Sharper (lanczos-3)", "+ vyhladené postavy / smoothed characters"], 480).save(os.path.join(VYST, "vyhladenie.png"))
-panel([a.crop((240, 80, 1680, 1080)), c.crop((240, 80, 1680, 1080))],
-      ["Pôvodná hra / Original game", "S úpravami / With improvements"], 720).save(os.path.join(VYST, "salon.png"))
+box = (885, 450, 1125, 750)                         # druhé porovnanie: stará pani
+panel([zv(a, box), zv(b, box), zv(c, box)],
+      ["Pôvodná hra / Original", "Ostrejšie / Sharper (lanczos-3)", "+ vyhladené postavy / smoothed characters"], 480).save(os.path.join(VYST, "vyhladenie2.png"))
 # titulky sa nemenia
 panel([zv(b, (740, 1000, 1190, 1050)), zv(c, (740, 1000, 1190, 1050))],
       ["Bez vyhladenia / No smoothing", "S vyhladením postáv – bez zmeny / With character smoothing – unchanged"], 900).save(os.path.join(VYST, "titulky.png"))
