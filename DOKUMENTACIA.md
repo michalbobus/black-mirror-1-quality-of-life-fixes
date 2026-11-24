@@ -128,6 +128,7 @@ EscapeMenu=1      ; ESC v hre = ponuka
 SpaceHotspots=1   ; medzerník = hotspoty na 2 s (ako tabulátor)
 HoldToSkip=1      ; ESC/medzerník v rozhovore = preskočenie po ďalšiu repliku (aj animácie, hudba)
 SaveLoadKeys=1    ; F5 = uložiť, F8 = nahrať
+QuickSaveKeys=1   ; Ctrl+S / Ctrl+L = rýchle uloženie / načítanie (QuickSaveSlot=98)
 WheelInventory=1  ; koliesko = predmety inventára
 DoubleClickWalk=1 ; dvojklik = pretočenie chôdze (postava hneď v cieli)
 [Cursor]
@@ -214,6 +215,15 @@ Overené: nahrávanie (8 pozícií), ukladanie s písaním názvu „abc d“ a 
 
 ### Ľavé tlačidlo myši v rozhovore
 Overené 24. 11. 2026 (úvodný rozhovor v salóne, vstup každých 1,5 s, 15 s): bez vstupu 6 replík, ľavé tlačidlo 11, medzerník 11 – ľavé tlačidlo preskakuje repliky natívne rovnako ako medzerník, doplnok ho nemení.
+
+### Rýchle uloženie a načítanie – Ctrl+S / Ctrl+L (24. 11. 2026)
+- Hra ukladá `0x433bb0(slot)` (save.N, savepic.N, a z poľa mien `0x5776e8` – 99 položiek po 0x33 B, index = číslo pozície – prepíše `savnames.txt`), načítava `0x433708(slot)` (vrátane krokov uloženia sa začína `0x409360()` ≠ 0 → nič). Bežne to volá skript obrazovky Uložit/Nahrát.
+- Doplnok: Ctrl+S/L v `klaves_dole` (pred blokovaním kláves počas rozhovoru), vykoná sa v kroku. Uloženie: len v hernej scéne s kontrolou hráča (inak hláška „Teraz sa nedá uložiť“), meno pozície do poľa mien a `0x433bb0([Controls] QuickSaveSlot, predvolene 98)`. Načítanie: ak `save.N` existuje, cez `nacitaj_hru` (obnova zapamätaných nastavení); aj z hlavnej ponuky `1006.100e`.
+- **Hláška:** `0x446c75(&šablóna, x, y, 1 = na stred, text, písmo, −1)` vykreslí text písmom titulkov (tell_font `[0x584e48]`) – tak ako titulky v `0x438d58` (`0x447593` = to isté + animácia). Poloha subtitle_x/y `[0x584e38]/[0x584e3c]` + posun scény. Animácia `0x406932(scéna, šablóna, −8, 0, "bmqol_hlaska")`, pixely z pamäte hry; po 50 krokoch (2 s, ako značky medzerníka) `0x418d17` + `0x406b31`; pri zmene scény ju uvoľní hra.
+- **Kódovanie textov hry = Kamenických** (zistené z pamäte: „ke schodišti“ š = 0xA8, „jídelny“ í = 0xA1; cp1250 ž 0x9E sa kreslilo ako Ř, š ako ?). Texty hlášok a meno pozície sa prevádzajú tabuľkou `KAMENICKI` (0x80–0xAB).
+- Jazyk hlášok podľa poznámok v config.ini (ako inštalácia): „kurzoru“ česky, „kurzora“ slovensky, inak anglicky.
+- Overené: Ctrl+L bez pozície → „Rýchla pozícia ešte nie je uložená“, Ctrl+S → save.98 + „Rýchle uloženie“, presun, Ctrl+L → Samuel späť na uloženom mieste + „Rýchle načítanie“, Ctrl+L z hlavnej ponuky po spustení hry, Ctrl+S v úvodnom rozhovore → „Teraz sa nedá uložiť“ (save.98 nezmenený). V savnames.txt sa zmenila len pozícia 98.
+- Pozícia vytvorená mimo obrazovky ukladania má starý náhľad (savepic z naposledy otvorenej obrazovky Uložit) – obrazovka nahrávania náhľady neukazuje.
 
 ### Zapamätané nastavenia
 Štartovací skript `main` pri **každom spustení hry** nastaví `tell_mode=2` (titulky vypnuté), `tell_volume=85`, `sound_volume=100`, `music_volume=80`; uložená hra obsahuje systémové premenné a pri načítaní ich prepíše (napr. save.1 mal `sound_volume=5`).

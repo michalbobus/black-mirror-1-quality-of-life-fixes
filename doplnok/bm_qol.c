@@ -924,6 +924,110 @@ static void priehladne_nazvy(void)
     if (zmena) ((void (__cdecl *)(unsigned char *))0x426c43)(s);
 }
 
+/* ---------- rýchle uloženie / načítanie (Ctrl+S / Ctrl+L) a hláška dole ---------- */
+/* Hra ukladá 0x433bb0(slot) -> save.N (+ savepic.N, mená všetkých pozícií do savnames.txt z poľa 0x5776e8,
+ * 99 položiek po 0x33 B, index = číslo pozície), načítava 0x433708(slot). Rýchla pozícia = [Controls] QuickSaveSlot
+ * (predvolene 98, v zozname pozícií je na konci). Hláška: text písmom titulkov (tell_font [0x584e48]) cez
+ * 0x446c75(&šablóna, x, y, 1 = na stred, text, písmo, -1) – ako titulky, na ich mieste (subtitle_x/y [0x584e38/3c]);
+ * animácia s pixelmi z pamäte hry, zobrazená 50 krokov (2 s) ako značky medzerníka. */
+static int __cdecl nacitaj_hru(int slot);
+static int cfg_rychle, cfg_rychla_pozicia = 98, jazyk;     /* jazyk hlášok: 0 sk, 1 cs, 2 en (podľa config.ini) */
+static int rychle_ziadost;                                  /* 1 = uložiť, 2 = načítať */
+static unsigned char *hlaska_anim, *hlaska_scena;
+static unsigned hlaska_do;
+static const wchar_t *const TEXTY[3][5] = {
+    {L"Rýchle uloženie", L"Rýchle načítanie", L"Rýchla pozícia ešte nie je uložená", L"Teraz sa nedá uložiť", L"Rýchle uloženie"},
+    {L"Rychlé uložení", L"Rychlé nahrání", L"Rychlá pozice ještě není uložená", L"Teď nelze uložit", L"Rychlé uložení"},
+    {L"Quick save", L"Quick load", L"No quick save yet", L"Cannot save now", L"Quick save"},
+};
+enum { T_ULOZENE, T_NACITANE, T_NIE_JE, T_NEDA_SA, T_MENO };
+
+/* Texty hry sú v kódovaní Kamenických (zistené z pamäte: „ke schodišti“ š = 0xA8, „jídelny“ í = 0xA1),
+ * písmo titulkov má znaky na týchto pozíciách (cp1250 ž 0x9E sa kreslilo ako Ř). */
+static const wchar_t KAMENICKI[44] = {
+    L'Č', L'ü', L'é', L'ď', L'ä', L'Ď', L'Ť', L'č', L'ě', L'Ě', L'Ĺ', L'Í', L'ľ', L'ĺ', L'Ä', L'Á',
+    L'É', L'ž', L'Ž', L'ô', L'ö', L'Ó', L'ů', L'Ú', L'ý', L'Ö', L'Ü', L'Š', L'Ľ', L'Ý', L'Ř', L'ť',
+    L'á', L'í', L'ó', L'ú', L'ň', L'Ň', L'Ů', L'Ô', L'š', L'ř', L'ŕ', L'Ŕ'};
+static void do_kamenickych(const wchar_t *z, char *c, int max)
+{
+    int i = 0;
+    for (; *z && i < max - 1; z++) {
+        unsigned char b = '?';
+        if (*z < 128) b = (unsigned char)*z;
+        else for (int k = 0; k < 44; k++) if (KAMENICKI[k] == *z) { b = (unsigned char)(0x80 + k); break; }
+        c[i++] = (char)b;
+    }
+    c[i] = 0;
+}
+
+static void hlaska_zrus(void)
+{
+    if (hlaska_anim && SCENA == hlaska_scena) {
+        ((void (__cdecl *)(void *))0x418d17)(hlaska_anim + 0x10);                 /* pixely (pamäť hry) */
+        ((void (__cdecl *)(unsigned char *, unsigned char **))0x406b31)(SCENA, &hlaska_anim);
+    }
+    hlaska_anim = 0;                    /* v inej scéne ju hra uvoľnila s celou scénou */
+}
+
+static void hlaska(int i)
+{
+    unsigned char *s = SCENA, t[32];
+    char a[128];
+    hlaska_zrus();
+    if (!s) return;
+    do_kamenickych(TEXTY[jazyk][i], a, sizeof a);
+    memset(t, 0, sizeof t);
+    unsigned char *v = ((unsigned char *(__cdecl *)(void *, int, int, int, const char *, int, int))0x446c75)(
+        t, I32(s, 0x5d5) + *(int *)0x584e38, I32(s, 0x5d9) + *(int *)0x584e3c, 1, a, *(int *)0x584e48, -1);
+    if (!v || !*(void **)(v + 0x14)) { loguj("hlaska: text sa nevykreslil"); return; }
+    hlaska_anim = ((unsigned char *(__cdecl *)(unsigned char *, void *, int, int, const char *))0x406932)(s, v, -8, 0, "bmqol_hlaska");
+    hlaska_scena = s; hlaska_do = pocet_krokov + KROKY_HOTSPOTOV;
+    loguj("hlaska %d: %s (%dx%d)", i, a, *(int *)v, *(int *)(v + 4));
+}
+
+static void rychle_krok(void)
+{
+    if (hlaska_anim && (pocet_krokov >= hlaska_do || SCENA != hlaska_scena)) hlaska_zrus();
+    if (!rychle_ziadost) return;
+    int z = rychle_ziadost; rychle_ziadost = 0;
+    int ponuka = SCENA && !lstrcmpA((char *)SCENA, "1006.100e") && POUZIVATEL_POVOLENY() >= 1;   /* hlavná ponuka */
+    if (z == 2 && ponuka) { /* načítanie aj z hlavnej ponuky (hneď po spustení hry) */ }
+    else if (!herna_scena()) return;
+    else if (!hra_v_scene()) { if (z == 1) hlaska(T_NEDA_SA); return; }   /* rozhovor, animácia */
+    int slot = cfg_rychla_pozicia;
+    if (z == 1) {
+        if (((fn0)0x409360)()) { hlaska(T_NEDA_SA); return; }       /* hra by uloženie odmietla */
+        char *meno = (char *)0x5776e8 + slot * 0x33;
+        do_kamenickych(TEXTY[jazyk][T_MENO], meno, 0x32);
+        ((void (__cdecl *)(int))0x433bb0)(slot);
+        loguj("rychle ulozenie -> save.%d", slot);
+        hlaska(T_ULOZENE);
+    } else {
+        char subor[MAX_PATH]; int n = lstrlenA(cesta_ini);
+        kopiruj(subor, cesta_ini, n + 1);
+        while (n > 0 && subor[n - 1] != '\\') n--;
+        wsprintfA(subor + n, "save.%d", slot);
+        if (GetFileAttributesA(subor) == INVALID_FILE_ATTRIBUTES) { hlaska(T_NIE_JE); return; }
+        hlaska_zrus();
+        nacitaj_hru(slot);
+        loguj("rychle nacitanie save.%d, scena %s", slot, SCENA ? (char *)SCENA : "-");
+        hlaska(T_NACITANE);
+    }
+}
+
+/* Jazyk hlášok podľa poznámok v config.ini (ako inštalácia): „kurzoru“ = česky, „kurzora“ = slovensky, inak anglicky. */
+static void zisti_jazyk(void)
+{
+    static char b[8192];
+    DWORD n = 0;
+    HANDLE f = CreateFileA(cesta_ini, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+    jazyk = 2;
+    if (f == INVALID_HANDLE_VALUE) return;
+    ReadFile(f, b, sizeof b - 1, &n, 0); CloseHandle(f); b[n] = 0;
+    if (obsahuje(b, "kurzoru")) jazyk = 1;
+    else if (obsahuje(b, "kurzora")) jazyk = 0;
+}
+
 /* ---------- háky ---------- */
 static int prvy_krok = 1;
 static int __cdecl hra_krok(void)
@@ -944,6 +1048,7 @@ static int __cdecl hra_krok(void)
     ladenie.udalosti[4] = preskakuje;
     if (cfg_koliesko) koliesko_krok();
     skratky_krok();
+    rychle_krok();
     return ((fn0)0x431cf8)();
 }
 
@@ -952,6 +1057,10 @@ static void __cdecl klaves_dole(WPARAM w, LPARAM l)
     int opakovanie = (l >> 30) & 1;
     ladenie.udalosti[1] = (int)w;
     loguj("klaves %x opak %d scena %s pouz %d", (int)w, opakovanie, SCENA ? (char *)SCENA : "-", POUZIVATEL_POVOLENY());
+    if ((w == 'S' || w == 'L') && cfg_rychle && (GetKeyState(VK_CONTROL) & 0x8000)) {     /* Ctrl+S / Ctrl+L */
+        if (!opakovanie) rychle_ziadost = w == 'S' ? 1 : 2;
+        return;
+    }
     if (w == VK_ESCAPE && cfg_esc_ponuka && hra_v_scene()) { if (!opakovanie) esc_ziadost = 1; return; }
     if (w == VK_SPACE && cfg_hotspoty && hra_v_scene() && !rec_bezi()) {   /* hotspoty sa zbierajú v kroku */
         hotspoty_do = pocet_krokov + KROKY_HOTSPOTOV;      /* ako tabulátor; opakovanie pri držaní predlžuje */
@@ -1311,6 +1420,10 @@ static void instaluj(void)
         if (cfg_hw && cfg_citl < 1000) { void *f = (void *)hw_setcursorpos; zapis((void *)0x485280, &f, 4); }
         loguj("kurzor: hardware %d citlivost %d", cfg_hw, cfg_citl);
     }
+    cfg_rychle = ini_cislo("Controls", "QuickSaveKeys", 1);
+    cfg_rychla_pozicia = ini_cislo("Controls", "QuickSaveSlot", 98);
+    if (cfg_rychla_pozicia < 1 || cfg_rychla_pozicia > 98) cfg_rychla_pozicia = 98;
+    zisti_jazyk();
     cfg_nazvy = ini_cislo("Video", "SaveNamesTransparent", 1);
     cfg_dvojklik = ini_cislo("Controls", "DoubleClickWalk", 1);
     if (cfg_dvojklik) hak_volanie(0x4410c5, 0x417949, dvojklik_mysi);     /* udalosť dvojkliku (0x50705c) */

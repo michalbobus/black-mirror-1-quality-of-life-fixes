@@ -41,6 +41,8 @@
 | **ESC** v ponuke / in menu | návrat do hry (zo Nastavení, Uložit/Nahrát hru a Tvůrci späť do hlavnej ponuky) | back to the game (from Options, Save/Load and Credits back to the main menu) |
 | **F5** | obrazovka Uložit hru (ESC vráti rovno do hry) | Save game screen (ESC returns straight to the game) |
 | **F8** | obrazovka Nahrát hru (ESC vráti rovno do hry) | Load game screen (ESC returns straight to the game) |
+| **Ctrl+S** | rýchle uloženie (dole sa na 2 sekundy ukáže hláška písmom titulkov) | quick save (a message in the subtitle font appears at the bottom for 2 seconds) |
+| **Ctrl+L** | rýchle načítanie, aj z hlavnej ponuky hneď po spustení hry | quick load, also from the main menu right after starting the game |
 | **medzerník / Space** v hre / in game | na 2 sekundy (ako Tab, pri držaní stále) ukáže všetky aktívne miesta v scéne: východy ikonou dverí, ostatné miesta krúžkom; kurzor je nad nimi červený (ako pri Tab) | shows all hotspots in the scene for 2 seconds (like Tab, permanently while held): exits with a door icon, everything else with a ring; the cursor turns red over them (like with Tab) |
 | **medzerník / Space** alebo **ľavé tlačidlo myši / left mouse button** v rozhovore / in dialogue | preskočí jednu repliku (aj vetu rozprávača) | skips one line (also a narrator sentence) |
 | **ESC** v rozhovore / in dialogue | preskočí repliku aj všetky animácie a hudbu po nej až po ďalšiu repliku | skips the line plus all animations and music after it, up to the next line |
@@ -103,6 +105,8 @@ Inštalácia skopíruje do priečinka hry knižnice `DDraw.dll`, `bm_core.dll`, 
 | `[Controls] SpaceHotspots` | 1 | medzerník ukáže aktívne miesta | Space shows hotspots |
 | `[Controls] HoldToSkip` | 1 | preskakovanie rozhovorov cez ESC a medzerník | skipping dialogue with ESC and Space |
 | `[Controls] SaveLoadKeys` | 1 | F5 = uložiť, F8 = nahrať | F5 = save, F8 = load |
+| `[Controls] QuickSaveKeys` | 1 | Ctrl+S = rýchle uloženie, Ctrl+L = rýchle načítanie | Ctrl+S = quick save, Ctrl+L = quick load |
+| `[Controls] QuickSaveSlot` | 98 | pozícia pre rýchle uloženie (1–98, v zozname na konci) | save slot for the quick save (1–98, at the end of the list) |
 | `[Controls] WheelInventory` | 1 | koliesko myši listuje inventárom | mouse wheel cycles the inventory |
 | `[Controls] DoubleClickWalk` | 1 | dvojklik = postava hneď v cieli | double-click = character arrives instantly |
 | `[Video] SaveNamesTransparent` | 1 | názvy uložených hier bez čierneho obdĺžnika | save names without the black rectangle |
