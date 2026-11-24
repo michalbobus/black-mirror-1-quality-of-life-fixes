@@ -40,6 +40,16 @@ Hra číta myš zo správ okna (WM_MOUSEMOVE), `GetCursorPos` neimportuje. dgVoo
 Hra štandardne posiela na obrazovku len zmenené obdĺžniky (voľba `optimizedraw=1` v agds.cfg, premenná 0x488080; funkcia zobrazenia 0x43e78f robí Blt zadného povrchu 0x597e60 do primárneho 0x597e5c). S dgVoodoo pritom ostávali zvyšky – napr. nápis „do spcke knihovněstnosti“ (dva nápisy cez seba) po rýchlom pohybe kurzora v hale. Pri `optimizedraw=0` sa každú snímku pošle celý obraz jedným Blt – po troch rýchlych prechodoch kurzorom žiadne zvyšky (overené 19. 11. 2026, save.1, hala).
 `install.bat` dopíše `optimizedraw=0` a `videomem=0` na koniec agds.cfg (každú len ak tam ešte nie je), `uninstall.bat` tieto riadky odstráni (súbor je potom zhodný s pôvodným, záloha v `zaloha/agds.cfg`).
 
+## Riadok enginu pri štarte (24. 11. 2026)
+Zaujímavosť: asi 0,5 s po spustení `agds.exe` sa na čiernej obrazovke na jednu snímku (~0,1 s) ukáže vľavo hore riadok enginu, ešte pred logami:
+```
+AGDS 2.299, (c) 1997-2002 P & C Software, Michael Gróf & Martin Preisler
+demo
+```
+- Text je v `agds.exe` na 0x885e8 (v mene „Gróf“ je ó bajt 0xA2 – kódovanie Kamenických aj 852), `demo` na 0x88634 – je to meno štartovacieho skriptu (`demo.scr`, 0x88880). Do logu sa píše aj „AGDS version 2.299 ( made Sep  8 2005 16:37:47 )  started“ (0x89890).
+- Kreslí sa neškálovane pevným písmom v ľavom hornom rohu obrazovky (mimo obrazu 4:3), horný okraj prvého riadku je orezaný a „demo“ sa s ním prekrýva; vedľa je zelený obdĺžnik (x 240–274, y 0–34 na obrazovke 1920×1080 – ľavý horný roh obrazu 4:3).
+- Snímky: `snimky/engine/start_cela_obrazovka.png` (celá obrazovka 1920×1080), `snimky/engine/start_riadok_2x.png` (výrez riadku zväčšený 2×). Zachytené rýchlym snímaním (mss, každých ~18 ms) hneď po spustení hry s úpravami.
+
 ## Časovanie enginu
 **Krok hry** = jeden krok logiky: hra 25-krát za sekundu (každých 40 ms) posunie animácie, chôdzu a časovače skriptov a spracuje vstupy. Nie je to snímka – vykreslený obraz sa s plynulým kurzorom posiela na obrazovku až 60-krát za sekundu, teda aj viackrát medzi dvoma krokmi.
 - Hlavná slučka 0x44218d: PeekMessage → ak nie je správa, snímka 0x4413db = logika 0x402dfb + zobrazenie 0x43e78f.
@@ -267,6 +277,10 @@ Plynulosť (krúženie myšou v hale, `nastroje/test/plynulost.py`): s FXAA aj b
 Overené v salóne: obdĺžniky sedia na všetkých 4 NPC aj na Samuelovi (`snimky/profily/postavy_fxaa.png` vs `postavy_bez.png`), titulok je bez zmeny, pozadie mimo postáv tiež. V hale 1 obdĺžnik, FXAA 0,9 ms (predtým 4,5 ms), 25 krokov/s, 59,7 zobrazení/s. `Smoothing=2` = celá plocha scény (y 45–543), stále bez ponúk a textov.
 
 Neskúšané (nebolo treba): ReShade (FXAA/SMAA by pracovalo až na zväčšenom obraze z dgVoodoo, nie pred zväčšením), zväčšovače xBR/ScaleFX/FSR (dgVoodoo vlastné shadery nepodporuje).
+
+## Prezentačné video (24. 11. 2026)
+Priečinok `video/` – trailer „pôvodná hra a hra s úpravami“ (3:11, 1920×1080, 60 snímok/s, popisy SK + EN) poskladaný z dielov, každý diel sa dá znova nahrať a zostaviť samostatne (`python nahraj.py DIEL`, `python zostav.py`). Podrobne v `video/NAVOD.md`. Výsledok `video/vystup/trailer.mp4` (nie je v gite).
+Zmerané pri nahrávaní: úvod novej hry (rozprávač 29,5 s + salón 2:24) v pôvodnej hre 2:54, s podržaným ESC 1,8 s.
 
 ## Inštalácia
 - `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `bm_core.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (jazyk podľa výberu, existujúci len so súhlasom) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
