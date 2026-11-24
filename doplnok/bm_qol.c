@@ -158,16 +158,22 @@ static void otvor_ponuku(void)
     if (o) ((int (__cdecl *)(unsigned char *, int, int))0x4311f7)(o, 753 + I32(s, 0x5d5), 22 + I32(s, 0x5d9));
 }
 
-/* Po návrate z ponuky kolieska schová (inak by ostali viditeľné), ak ich načítal doplnok a myš nie je hore. */
+/* Kolieska (1006.100c) hra ukáže pri priblížení myši k hornému okraju. Ak ich načítal doplnok (ESC, F5/F8),
+ * po návrate do hry by ostali viditeľné – a ak sa hra uložila cez F5, uložia sa s pozíciou a sú vidno stále
+ * (pozícia 2 z 24. 11. 2026). Preto ich doplnok skryje vždy, keď je myš aspoň 1 s (25 krokov) pod horným pásom. */
+static int kolieska_dole;
 static void schovaj_kolieska(void)
 {
     unsigned char *s = SCENA, *o;
-    if (kolieska_nacitane == 1 && s && zacina((char *)s, "1006.")) kolieska_nacitane = 2;
-    if (kolieska_nacitane != 2 || !hra_v_scene() || *(int *)0x507014 < 60) return;
-    kolieska_nacitane = 0;
+    if (!hra_v_scene() || *(int *)0x507014 < 60) { kolieska_dole = 0; return; }
+    if (++kolieska_dole < 25) return;
+    kolieska_dole = 0;
     o = NAJDI_OBJEKT(s, "1006.100c");
-    if (o) ((int (__cdecl *)(void *, unsigned char *, unsigned char *))0x43040d)(0, o, s);
-    loguj("kolieska schovane %x", (unsigned)o);
+    if (o) {
+        ((int (__cdecl *)(void *, unsigned char *, unsigned char *))0x43040d)(0, o, s);
+        kolieska_nacitane = 0;
+        loguj("kolieska schovane %x", (unsigned)o);
+    }
 }
 
 static int rec_bezi(void);
@@ -234,6 +240,21 @@ static void priprav_sablony(void)
     loguj("sablony znaciek %d (dvere %dx%d)", sablony, *(int *)sablona_dvere, *(int *)(sablona_dvere + 4));
 }
 
+/* Miesto so stále viditeľnou ikonou nedostane značku: napr. šípka „zpět“ v detaile Marcusovho obrazu (19d5) je
+ * miesto 19d5.10af bez obrázka a k nemu objekt main.11d2 s obrázkom Zoomzpet.bmp a presne tým istým regiónom.
+ * Ikona = aktívny objekt s animáciou (+0x7e) a regiónom; zhoda = rovnaké ohraničenie regiónu (+0xA..+0x10). */
+#define MAX_IKON 32
+static int ikony_box[MAX_IKON][4], pocet_ikon;
+
+static int ma_ikonu(unsigned char *o, unsigned char *reg)
+{
+    for (int i = 0; i < pocet_ikon; i++)
+        if (ikony_box[i][0] == *(short *)(reg + 0xa) && ikony_box[i][1] == *(short *)(reg + 0xc) &&
+            ikony_box[i][2] == *(short *)(reg + 0xe) && ikony_box[i][3] == *(short *)(reg + 0x10) && *(void **)(o + 0x7e) == 0)
+            return 1;
+    return 0;
+}
+
 static void zbieraj_hotspoty(void)
 {
     unsigned char *s = SCENA;
@@ -241,9 +262,21 @@ static void zbieraj_hotspoty(void)
     if (!s) return;
     unsigned char *prvy = *(unsigned char **)(s + 0x40 + 0x28), *o = prvy;
     int n = 0;
+    pocet_ikon = 0;
+    while (o && n++ < 1000 && pocet_ikon < MAX_IKON) {           /* objekty s vlastným obrázkom a regiónom */
+        unsigned char *reg = *(unsigned char **)(o + 0x72);
+        if (I32(o, 0x34) && reg && *(void **)(o + 0x7e)) {
+            int *b = ikony_box[pocet_ikon++];
+            b[0] = *(short *)(reg + 0xa); b[1] = *(short *)(reg + 0xc); b[2] = *(short *)(reg + 0xe); b[3] = *(short *)(reg + 0x10);
+        }
+        o = *(unsigned char **)o;
+        if (o == prvy) break;
+    }
+    o = prvy; n = 0;
     while (o && n++ < 1000 && pocet_hotspotov < MAX_HOTSPOTOV) {
         unsigned char *reg = *(unsigned char **)(o + 0x72), *nazov = *(unsigned char **)(o + 0x7a);
-        if (I32(o, 0x34) && reg && nazov && nazov[0] && !zacina((char *)o + 8, "inv.") && o != VYBRANY_PREDMET) {
+        if (I32(o, 0x34) && reg && nazov && nazov[0] && !zacina((char *)o + 8, "inv.") && o != VYBRANY_PREDMET &&
+            !ma_ikonu(o, reg)) {
             /* inverzia prepočtu z hit-testu 0x4034b0: región = bod - animácia + obj[0x3a] - obj[0x42] */
             int x = *(short *)reg + I32(o, 0x42), y = *(short *)(reg + 2) + I32(o, 0x46);
             unsigned char *anim = *(unsigned char **)(o + 0x7e), *post = *(unsigned char **)(o + 0x82);
@@ -287,7 +320,11 @@ static void znacky_krok(void)
     int n = najdi_znacky(s, nase, MAX_HOTSPOTOV * 2);
     if (n == pocet_zobrazenych && pocet_hotspotov == pocet_zobrazenych &&
         rovnake(hotspoty, zobrazene, pocet_hotspotov * (int)sizeof(Hotspot))) return;     /* bez zmeny */
-    for (int i = 0; i < n; i++) ((void (__cdecl *)(unsigned char *, unsigned char **))0x406b31)(s, &nase[i]);
+    for (int i = 0; i < n; i++) {
+        void *px = *(void **)(nase[i] + 0x24);          /* vlastná kópia pixelov v pamäti hry (pozri nižšie) */
+        ((void (__cdecl *)(unsigned char *, unsigned char **))0x406b31)(s, &nase[i]);
+        if (px && px != kruh_pixely && px != dvere_pixely) ((void (__cdecl *)(void *))0x44bb62)(px);
+    }
     pocet_zobrazenych = 0;
     if (!pocet_hotspotov) return;
     priprav_sablony();
@@ -296,6 +333,14 @@ static void znacky_krok(void)
         kopiruj(t, hotspoty[i].vychod && sablony == 2 ? sablona_dvere : sablona_kruh, 32);
         *(int *)(t + 0xc) = hotspoty[i].x - *(int *)t / 2;          /* stred značky na strede regiónu */
         *(int *)(t + 0x10) = hotspoty[i].y - *(int *)(t + 4) / 2;
+        /* Pixely musia byť z pamäte hry: pri uvoľnení scény (0x40587e) hra uvoľní pixely všetkých jej animácií
+         * (0x418d17 -> free) – s pixelmi v poli doplnku spadla (zistené 24. 11. 2026: medzerník, hneď ESC,
+         * kolieska uložené v pozícii -> ponuka uvoľnila scénu). Kópiu pri odstránení uvoľní doplnok, inak hra. */
+        int velk = *(int *)t * *(int *)(t + 4) * 4;
+        void *kopia = ((void *(__cdecl *)(unsigned))0x44ba28)(velk);
+        if (!kopia) continue;
+        kopiruj(kopia, *(void **)(t + 0x14), velk);
+        *(void **)(t + 0x14) = kopia;
         ((unsigned char *(__cdecl *)(unsigned char *, void *, int, int, const char *))0x406932)(s, t, -9, 0, MENO_ZNACKY);
     }
     kopiruj(zobrazene, hotspoty, pocet_hotspotov * (int)sizeof(Hotspot));
