@@ -118,6 +118,15 @@ Hodnoty zmenené v nastaveniach hry si doplnok zapisuje do sekcie `[Remembered]`
 
 *Values changed in the game's options are stored by the plugin in the `[Remembered]` section. Changes in `config.ini` take effect after restarting the game. Upscaling sharpness is set in `dgVoodoo.conf` (`Resampling = lanczos-3`, softer `bicubic` or the original `bilinear`).*
 
+## Zmeny vo verziách / Changelog
+**1.0.1** (24. 11. 2026)
+- oprava: počas CGI filmov sa už nezobrazuje kurzor (najplynulejší kurzor predtým ostal nad filmom z hlavnej ponuky); pôvodná hra počas filmov kurzor neukazuje<br>
+  *fix: the cursor is no longer shown during CGI movies (the smoothest cursor used to stay over the movie from the main menu); the original game shows no cursor during movies*
+
+**1.0.0** (24. 11. 2026)
+- prvé vydanie so všetkými úpravami zo [zoznamu vylepšení](#zoznam-vylepšení--list-of-improvements)<br>
+  *first release with all improvements from the [list of improvements](#zoznam-vylepšení--list-of-improvements)*
+
 ## Použité nástroje / Credits
 Preklad DirectDraw na Direct3D 11 robí [dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) 2.87.6 od Dégé (freeware), ktorý je súčasťou balíka.
 
