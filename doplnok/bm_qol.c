@@ -980,6 +980,7 @@ static void hlaska(int i)
     unsigned char *v = ((unsigned char *(__cdecl *)(void *, int, int, int, const char *, int, int))0x446c75)(
         t, I32(s, 0x5d5) + *(int *)0x584e38, I32(s, 0x5d9) + *(int *)0x584e3c, 1, a, *(int *)0x584e48, -1);
     if (!v || !*(void **)(v + 0x14)) { loguj("hlaska: text sa nevykreslil"); return; }
+    *(int *)(v + 0xc) = I32(s, 0x5d5) + *(int *)0x584e38 - *(int *)v / 2;   /* x = ľavý okraj -> na stred okolo subtitle_x */
     hlaska_anim = ((unsigned char *(__cdecl *)(unsigned char *, void *, int, int, const char *))0x406932)(s, v, -8, 0, "bmqol_hlaska");
     hlaska_scena = s; hlaska_do = pocet_krokov + KROKY_HOTSPOTOV;
     loguj("hlaska %d: %s (%dx%d)", i, a, *(int *)v, *(int *)(v + 4));
