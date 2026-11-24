@@ -58,9 +58,9 @@ Počas rozhovorov už ostatné klávesy (napríklad písmená) repliky nepreskak
 ## Ukážky pred a po / Before and after
 
 ### Vyhladenie postáv / Character smoothing
-Výrez zväčšený 2×: pôvodná hra (rozmazané zväčšenie so zubatými hranami), ostrejšie zväčšenie a k nemu vyhladené hrany postáv.
+Výrez zväčšený 2×: pôvodná hra (rozmazané zväčšenie so zubatými hranami) a hra s úpravami (ostrejšie zväčšenie a vyhladené hrany postáv).
 
-*Detail enlarged 2×: the original game (blurry upscaling with jagged edges), sharper upscaling, and sharper upscaling with smoothed character edges.*
+*Detail enlarged 2×: the original game (blurry upscaling with jagged edges) and the game with improvements (sharper upscaling and smoothed character edges).*
 
 ![Vyhladenie postáv / Character smoothing](snimky/readme/vyhladenie.png)
 
