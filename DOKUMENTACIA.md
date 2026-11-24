@@ -70,6 +70,14 @@ Chôdza postavy (hala, 2 trasy, 3×): bez pohybu myši 3,95 / 3,35 s, s krúžia
 
 Počítadlo prekreslení navyše: DDraw.dll + 0x1000 + 0x800 + 0x4C (na meranie, `nastroje/pamat.py`).
 
+### Prieskum: ešte plynulejší kurzor (24. 11. 2026)
+Otázka: dá sa kurzor zlepšiť nad súčasných 60 prekreslení za sekundu? Zmerané (myš krúži cez SetCursorPos 500×/s, snímanie obrazovky 60×/s cez mss, hala):
+- **Fps=60 (súčasný stav):** obraz s kurzorom sa mení 60×/s = každú obnovu 60 Hz monitora. Na 60 Hz monitore sa viac snímok ukázať nedá (vsync dgVoodoo).
+- **Systémový kurzor Windows cez dgVoodoo** (pokus: presmerované importy SetCursor/ShowCursor hry na šípku Windows): pri zväčšovaní obrazu dgVoodoo fyzický kurzor skryje a kreslí ho sám do obrazu („emulovaný hardvérový kurzor“, CursorScaleFactor) – ale len keď hra pošle snímku. Pri Fps=0 sa šípka hýbala len 25×/s, rovnako ako kurzor hry. Sám o sebe teda nepomôže.
+- **FreeMouse=true** (dgVoodoo nepreváža myš do priestoru 800×600): Windows kreslí skutočný kurzor bez čakania na hru, ale hra dostáva súradnice obrazovky (zmerané 1320, 810 namiesto 0–799 × 0–599) – nepoužiteľné bez vlastného prepočtu.
+
+Možnosti: (a) Fps podľa obnovovacej frekvencie monitora (120/144 Hz) – malá úprava, pomôže len na rýchlejších monitoroch; (b) skutočný kurzor Windows: FreeMouse=true + doplnok prepočíta súradnice všetkých správ myši (okenná procedúra 0x440c79), GetCursorPos/SetCursorPos v bm_core (plynulý kurzor, citlivosť) a 0x43d203, obmedzí kurzor na obraz 4:3 (ClipCursor), z obrázka kurzora hry (strieborný, červený, dvere, predmety, blikanie „fade mouse“) zostaví zväčšený HCURSOR pri každej zmene a kurzor hry skryje. Kurzor by sa hýbal s každým pohybom myši bez oneskorenia vykresľovania hry; je to však veľký zásah. Nič z toho zatiaľ nie je urobené.
+
 ## Citlivosť kurzora (config.ini [Cursor] Sensitivity)
 `Sensitivity=0.5` (predvolené), rozsah 0.1–1.0 (mimo rozsahu sa orezá, nečitateľná hodnota = 0.5; desatinná bodka aj čiarka). Násobok pohybu myši: 1.0 = rýchlosť pôvodnej hry.
 - V tom istom háku 0x43cfee: pri každom volaní (stovky za sekundu počas čakania na krok) porovná `GetCursorPos` s naposledy nastavenou polohou, rozdiel vynásobí citlivosťou (počíta v tisícinách pixela, zlomky sa nestrácajú) a presunie kurzor `SetCursorPos`.
