@@ -9,6 +9,7 @@
  *   0x43e78f  začiatok funkcie zobrazenia (Blt zadného povrchu na obrazovku): vyhladenie, pretáčanie bez snímok
  *   0x408c5c  začiatok nastavenia kurzora nad objektom: červený kurzor nad východom počas značiek hotspotov
  *   0x4410c5  call 0x417949   – udalosť dvojkliku (WM_LBUTTONDBLCLK + pustenie): pretočenie chôdze
+ *   import SetCursorPos (0x485280) – hardvérový kurzor s citlivosťou; okno kurzora vo vlastnom vlákne (hw_vlakno)
  *
  * Preklad: doplnok/zostav.bat (zig cc, bez CRT).
  */
@@ -643,12 +644,249 @@ static void skratky_krok(void)
     if (hra_v_scene()) skratka_stav = 0;                    /* po uložení/nahratí je hráč späť v hre */
 }
 
+/* ---------- hardvérový kurzor ([Cursor] Mode=hardware) ---------- */
+/* Kurzor hry je animácia scény s poradím −10 („defmouse“, „mouse pic“, „mouse object“ = predmet...). Doplnok jej
+ * pixely (+0x24) presmeruje na priehľadné pole (šablóny hry ostanú nedotknuté), takže ho hra ani dgVoodoo nekreslia,
+ * a pôvodný obrázok ukáže vo vlastnom priehľadnom okne nad hrou. To okno presúva samostatné vlákno 1000× za sekundu
+ * podľa GetCursorPos – Windows ho skladá nezávisle od snímok hry (hra 25/s, dgVoodoo vsync). dgVoodoo drží fyzický
+ * kurzor v obdĺžniku 800×600 (ClipCursor), takže poloha v hre = GetCursorPos − ľavý horný roh obdĺžnika.
+ * Citlivosť (Sensitivity) v tomto režime počíta to isté vlákno (bm_core ju vtedy vynechá), aby okno neposkakovalo
+ * medzi nepreškálovanou a preškálovanou polohou. */
+static int cfg_hw, cfg_citl = 700;
+static unsigned hw_prazdne[256 * 256];          /* priehľadné pixely (purpurová) pre animáciu kurzora */
+static unsigned hw_pix[128 * 128];              /* obrázok kurzora hry (B, G, R, 100; purpurová = priehľadná) */
+static volatile LONG hw_verzia, hw_viditelny, hw_resync = 1;
+static int hw_w, hw_h, hw_dx, hw_dy;            /* rozmery, posun obrázka voči polohe myši (px hry) */
+static CRITICAL_SECTION hw_cs;
+static HANDLE hw_vlakno_h;
+
+/* V hernom vlákne (krok, zobrazenie): skryje kurzor hry a odovzdá jeho obrázok. Vráti 1, ak niečo zmenil
+ * (vtedy treba scénu prekresliť, inak by na obrazovku išla snímka ešte s kurzorom hry). */
+static int hw_kurzor_hra(void)
+{
+    unsigned char *s = SCENA;
+    if (!cfg_hw || !hw_vlakno_h) return 0;
+    if (!s || FILM_BEZI) { hw_viditelny = 0; return 0; }
+    unsigned char *prvy = *(unsigned char **)(s + 0x80 + 0x28), *a = prvy, *kurzor = 0;
+    int k = 0, zmena = 0;
+    while (a && k++ < 5000) {
+        if (I32(a, 0xc) == -10 && I32(a, 0x18) == 32) {
+            int w = I32(a, 0x10), h = I32(a, 0x14);
+            unsigned *p = *(unsigned **)(a + 0x24);
+            if (p && p != hw_prazdne && w > 0 && h > 0 && w <= 128 && h <= 128) {
+                EnterCriticalSection(&hw_cs);
+                kopiruj(hw_pix, p, w * h * 4); hw_w = w; hw_h = h;
+                LeaveCriticalSection(&hw_cs);
+                *(unsigned **)(a + 0x24) = hw_prazdne;
+                InterlockedIncrement(&hw_verzia); zmena = 1;
+            }
+            if (*(unsigned **)(a + 0x24) == hw_prazdne) kurzor = a;
+        }
+        a = *(unsigned char **)a;
+        if (a == prvy) break;
+    }
+    if (kurzor) {
+        int dx = I32(kurzor, 0x1c) - I32(s, 0x5d5) - MYS_X, dy = I32(kurzor, 0x20) - I32(s, 0x5d9) - MYS_Y;
+        if (dx != hw_dx || dy != hw_dy) { hw_dx = dx; hw_dy = dy; InterlockedIncrement(&hw_verzia); }
+    }
+    hw_viditelny = kurzor != 0;
+    return zmena;
+}
+
+static BOOL WINAPI hw_setcursorpos(int x, int y) { hw_resync = 1; return SetCursorPos(x, y); }   /* hra presúva kurzor */
+
+static void hw_obrazok(unsigned *bity, int nw, int nh)
+{
+    int w = hw_w, h = hw_h;
+    for (int y = 0; y < nh; y++)
+        for (int x = 0; x < nw; x++) {
+            int sx = ((2 * x + 1) * w * 128) / nw - 128, sy = ((2 * y + 1) * h * 128) / nh - 128;   /* 1/256 px */
+            int x0 = sx >> 8, y0 = sy >> 8, fx = sx & 255, fy = sy & 255;
+            int vahy[4] = {(256 - fx) * (256 - fy), fx * (256 - fy), (256 - fx) * fy, fx * fy};
+            unsigned sa = 0, sr = 0, sg = 0, sb = 0;
+            for (int i = 0; i < 4; i++) {
+                int xx = x0 + (i & 1), yy = y0 + (i >> 1);
+                if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+                unsigned c = hw_pix[yy * w + xx];
+                if ((c & 0xFFFFFF) == 0xFF00FF) continue;
+                sa += 255 * vahy[i]; sr += ((c >> 16) & 255) * vahy[i];
+                sg += ((c >> 8) & 255) * vahy[i]; sb += (c & 255) * vahy[i];
+            }
+            bity[y * nw + x] = ((sa >> 16) << 24) | ((sr >> 16) << 16) | ((sg >> 16) << 8) | (sb >> 16);
+        }
+}
+
+static DWORD WINAPI hw_vlakno(LPVOID nic)
+{
+    (void)nic;
+    HMODULE wm = LoadLibraryA("winmm.dll");                  /* Sleep(1) = 1 ms */
+    FARPROC tbp = wm ? GetProcAddress(wm, "timeBeginPeriod") : 0;
+    if (tbp) ((UINT (WINAPI *)(UINT))tbp)(1);
+    while (!HWND_HRY) Sleep(50);
+    WNDCLASSA wc; memset(&wc, 0, sizeof wc);
+    wc.lpfnWndProc = DefWindowProcA; wc.hInstance = GetModuleHandleA(0); wc.lpszClassName = "bmqol_kurzor";
+    RegisterClassA(&wc);
+    HWND okno = CreateWindowExA(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                                "bmqol_kurzor", "", WS_POPUP, 0, 0, 1, 1, 0, 0, wc.hInstance, 0);   /* bez vlastníka: presun nečaká na herné vlákno */
+    loguj("hw kurzor: okno %x", (unsigned)(size_t)okno);
+    if (!okno) return 0;
+    HDC obr = GetDC(0), pam = CreateCompatibleDC(obr);
+    HBITMAP bmp = 0; unsigned *bity = 0;
+    int verzia = -1, mierka_obr = 0, bw = 0, bh = 0, ukazane = 0, px = -9999, py = -9999;
+    int vx = 0, vy = 0, lx = 0, ly = 0;
+    for (;;) {
+        MSG m;
+        while (PeekMessageA(&m, 0, 0, 0, PM_REMOVE)) DispatchMessageA(&m);
+        Sleep(1);
+        HWND hra = HWND_HRY;
+        int vid = hw_viditelny && hra && GetForegroundWindow() == hra && !IsIconic(hra);
+        if (!vid) { if (ukazane) { ShowWindow(okno, SW_HIDE); ukazane = 0; } hw_resync = 1; continue; }
+        /* obraz hry v okne: 800×600 zväčšené so zachovaným pomerom, na stred klientskej oblasti */
+        RECT rc; GetClientRect(hra, &rc);
+        POINT o = {0, 0}; ClientToScreen(hra, &o);
+        int cw = rc.right, ch = rc.bottom;
+        int mierka = cw * 1000 / 800 < ch * 1000 / 600 ? cw * 1000 / 800 : ch * 1000 / 600;   /* v tisícinách */
+        if (mierka <= 0) continue;
+        int ox = o.x + (cw - 800 * mierka / 1000) / 2, oy = o.y + (ch - 600 * mierka / 1000) / 2;
+        /* poloha v hre: fyzický kurzor v obdĺžniku 800×600 dgVoodoo */
+        RECT kl; GetClipCursor(&kl);
+        int klip = kl.right - kl.left == 800 && kl.bottom - kl.top == 600;
+        int zx = klip ? kl.left : 0, zy = klip ? kl.top : 0;
+        POINT p; GetCursorPos(&p);
+        if (cfg_citl < 1000) {
+            if (hw_resync) { hw_resync = 0; vx = p.x * 1000; vy = p.y * 1000; lx = p.x; ly = p.y; }
+            else if (p.x != lx || p.y != ly) {
+                vx += (p.x - lx) * cfg_citl; vy += (p.y - ly) * cfg_citl;
+                if (vx < zx * 1000) vx = zx * 1000;
+                if (vx > (zx + 799) * 1000) vx = (zx + 799) * 1000;
+                if (vy < zy * 1000) vy = zy * 1000;
+                if (vy > (zy + 599) * 1000) vy = (zy + 599) * 1000;
+                lx = vx / 1000; ly = vy / 1000;
+                SetCursorPos(lx, ly);
+                p.x = lx; p.y = ly;
+            }
+        }
+        /* obrázok: zväčšený bilineárne, premultiplikovaná alfa (purpurová = priehľadná) */
+        if (hw_verzia != verzia || mierka != mierka_obr) {
+            EnterCriticalSection(&hw_cs);
+            verzia = hw_verzia; mierka_obr = mierka;
+            int nw = (hw_w * mierka + 999) / 1000, nh = (hw_h * mierka + 999) / 1000;
+            if (nw < 1) nw = 1;
+            if (nh < 1) nh = 1;
+            if (!bmp || nw != bw || nh != bh) {
+                if (bmp) DeleteObject(bmp);
+                BITMAPINFO bi; memset(&bi, 0, sizeof bi);
+                bi.bmiHeader.biSize = sizeof bi.bmiHeader; bi.bmiHeader.biWidth = nw; bi.bmiHeader.biHeight = -nh;
+                bi.bmiHeader.biPlanes = 1; bi.bmiHeader.biBitCount = 32;
+                bmp = CreateDIBSection(pam, &bi, DIB_RGB_COLORS, (void **)&bity, 0, 0);
+                SelectObject(pam, bmp); bw = nw; bh = nh;
+            }
+            if (bity) hw_obrazok(bity, nw, nh);
+            LeaveCriticalSection(&hw_cs);
+            POINT nula = {0, 0}; SIZE vel = {bw, bh};
+            BLENDFUNCTION mi = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+            POINT kam = {ox + (p.x - zx + hw_dx) * mierka / 1000, oy + (p.y - zy + hw_dy) * mierka / 1000};
+            UpdateLayeredWindow(okno, obr, &kam, &vel, pam, &nula, 0, &mi, ULW_ALPHA);
+            px = kam.x; py = kam.y;
+        }
+        int nx = ox + (p.x - zx + hw_dx) * mierka / 1000, ny = oy + (p.y - zy + hw_dy) * mierka / 1000;
+        if (nx != px || ny != py || !ukazane) {
+            if (ukazane) SetWindowPos(okno, 0, nx, ny, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER);
+            else SetWindowPos(okno, HWND_TOPMOST, nx, ny, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            px = nx; py = ny; ukazane = 1;
+        }
+    }
+}
+
+static void hw_start(void)
+{
+    if (!cfg_hw || hw_vlakno_h) return;
+    for (int i = 0; i < 256 * 256; i++) hw_prazdne[i] = 0x64FF00FF;
+    InitializeCriticalSection(&hw_cs);
+    hw_vlakno_h = CreateThread(0, 0, hw_vlakno, 0, 0, 0);
+}
+
+/* ---------- obrazovka Uložit/Nahrát hru: názvy pozícií bez čierneho obdĺžnika ---------- */
+/* Názvy pozícií sú animácie „1006.101b.100b.N“ (text vykreslený na čiernom pozadí, 0,0,0). Čisté čierne pixely sa
+ * zmenia na priehľadnú purpurovú (ako okraje bodiek a ikon), text ostane. Hra obrázok nanovo vytvorí pri zmene
+ * (napr. písanie názvu), preto sa kontroluje každý krok; pri zmene sa scéna prekreslí (0x426c43). */
+static int cfg_nazvy;
+/* Bodkovaná čiara za názvom je priamo v pozadí „ulozit_hru.bmp“ (800×600) a čierny obdĺžnik ju pod textom zakrýval.
+ * Doplnok si uloží pôvodný pás pozadia (B_X0..B_X1 × B_Y0..B_Y1) a pod šírkou každého názvu nahradí riadky
+ * s bodkami pixelmi z najbližšieho riadku nad nimi bez bodiek. */
+#define B_X0 280
+#define B_X1 640
+#define B_Y0 150
+#define B_Y1 460
+static unsigned pozadie_orig[B_Y1 - B_Y0][B_X1 - B_X0];
+static unsigned *pozadie_p;                     /* pixely pozadia, z ktorých je uložený pôvodný pás */
+static int pozadie_stav[16];                    /* posledná šírka názvu (na zistenie zmeny) */
+
+static int jas_r(unsigned c) { return (c >> 16) & 255; }
+static int riadok_bodiek(int y, int x0)          /* v pôvodnom pozadí sú na riadku bodky (veľa svetlých pixelov) */
+{
+    int n = 0;
+    if (y < B_Y0 || y >= B_Y1) return 0;
+    for (int x = x0; x < B_X1 && x < x0 + 200; x++) if (jas_r(pozadie_orig[y - B_Y0][x - B_X0]) > 100) n++;
+    return n > 15;
+}
+
+static void priehladne_nazvy(void)
+{
+    unsigned char *s = SCENA;
+    if (!cfg_nazvy || !s || !zacina((char *)s, "1006.101b")) { pozadie_p = 0; return; }
+    unsigned char *prvy = *(unsigned char **)(s + 0x80 + 0x28), *a = prvy, *poz = 0;
+    int k = 0;
+    while (a && k++ < 2000) {                      /* pozadie */
+        if (!lstrcmpA((char *)a + 0x41, "ulozit_hru.bmp") && I32(a, 0x10) == 800 && I32(a, 0x14) == 600 && I32(a, 0x18) == 32) poz = a;
+        a = *(unsigned char **)a;
+        if (a == prvy) break;
+    }
+    unsigned *bg = poz ? *(unsigned **)(poz + 0x24) : 0;
+    if (bg && bg != pozadie_p) {
+        for (int y = B_Y0; y < B_Y1; y++) kopiruj(pozadie_orig[y - B_Y0], bg + y * 800 + B_X0, (B_X1 - B_X0) * 4);
+        pozadie_p = bg;
+        for (int i = 0; i < 16; i++) pozadie_stav[i] = -1;
+    }
+    int zmena = 0;
+    a = prvy; k = 0;
+    while (a && k++ < 2000) {
+        if (zacina((char *)a + 0x41, "1006.101b.100b.") && I32(a, 0x18) == 32) {
+            int w = I32(a, 0x10), h = I32(a, 0x14), n = w * h;
+            unsigned *p = *(unsigned **)(a + 0x24);
+            if (p && n > 0 && n <= 800 * 64)
+                for (int i = 0; i < n; i++)
+                    if ((p[i] & 0xFFFFFF) == 0) { p[i] |= 0xFF00FF; zmena = 1; }
+            int slot = ((char *)a)[0x41 + 15] - '0';
+            int x = I32(a, 0x1c), y = I32(a, 0x20);
+            if (bg && slot >= 0 && slot < 16 && pozadie_stav[slot] != w && x >= B_X0 && y >= B_Y0 && y + h <= B_Y1) {
+                int x1 = x + w > B_X1 ? B_X1 : x + w;
+                for (int yy = y; yy < y + h; yy++) {
+                    int zdroj = yy;                                 /* riadok bez bodiek nad (alebo pod) */
+                    if (riadok_bodiek(yy, x)) {
+                        while (zdroj > y && riadok_bodiek(zdroj, x)) zdroj--;
+                        if (riadok_bodiek(zdroj, x)) { zdroj = yy; while (zdroj < y + h - 1 && riadok_bodiek(zdroj, x)) zdroj++; }
+                    }
+                    for (int xx = B_X0; xx < B_X1; xx++)            /* pôvodný riadok, pod názvom bez bodiek */
+                        bg[yy * 800 + xx] = pozadie_orig[(xx >= x && xx < x1 ? zdroj : yy) - B_Y0][xx - B_X0];
+                }
+                pozadie_stav[slot] = w; zmena = 1;
+            }
+        }
+        a = *(unsigned char **)a;
+        if (a == prvy) break;
+    }
+    if (zmena) ((void (__cdecl *)(unsigned char *))0x426c43)(s);
+}
+
 /* ---------- háky ---------- */
 static int prvy_krok = 1;
 static int __cdecl hra_krok(void)
 {
     ladenie.udalosti[0]++;
     pocet_krokov++;
+    if (cfg_hw && !hw_vlakno_h) hw_start();
+    hw_kurzor_hra();
     ladenie_krok();
     if (prvy_krok) { prvy_krok = 0; obnov_nastavenia("start"); }
     if (esc_ziadost) { esc_ziadost = 0; if (hra_v_scene()) otvor_ponuku(); }
@@ -657,6 +895,7 @@ static int __cdecl hra_krok(void)
     kurzor_nad_vychodom_krok();
     preskakovanie_krok();
     chodza_krok();
+    priehladne_nazvy();
     ladenie.udalosti[4] = preskakuje;
     if (cfg_koliesko) koliesko_krok();
     skratky_krok();
@@ -940,6 +1179,8 @@ static void __cdecl zobraz(void)
         posledna = t;
     }
     if (chodza_rezim == 2) return;                      /* pretáčanie chôdze po dvojkliku: nič na obrazovku */
+    priehladne_nazvy();                                 /* editovaný názov hra vytvára každý krok nanovo */
+    if (hw_kurzor_hra() && SCENA && *(int *)0x584ff8) ((void (__cdecl *)(unsigned char *))0x426c43)(SCENA);  /* bez kurzora hry */
     LARGE_INTEGER t0, t1; QueryPerformanceCounter(&t0);
     int vyhladene = vyhlad_snimku();
     QueryPerformanceCounter(&t1); ladenie.udalosti[5] = (int)(t1.QuadPart - t0.QuadPart);
@@ -1010,6 +1251,22 @@ static void instaluj(void)
     hak_volanie(0x42e416, 0x433708, nacitaj_hru);
     hak_volanie(0x43a228, 0x433708, nacitaj_hru);
     hak_volanie(0x42b8af, 0x43a112, nastav_premennu);
+    {
+        char t[16]; GetPrivateProfileStringA("Cursor", "Mode", "hardware", t, sizeof t, cesta_ini);
+        cfg_hw = (t[0] | 0x20) == 'h';
+        GetPrivateProfileStringA("Cursor", "Sensitivity", "0.7", t, sizeof t, cesta_ini);
+        int c = 0, d = 1000, des = 0, cisla = 0;            /* „0.7“ -> 700 (tisíciny) */
+        for (char *q = t; *q; q++) {
+            if (*q >= '0' && *q <= '9') { cisla = 1; if (!des) c = c * 10 + (*q - '0'); else { d /= 10; c += (*q - '0') * d; } }
+            else if ((*q == '.' || *q == ',') && !des) { c *= 1000; des = 1; }
+            else break;
+        }
+        if (!des) c *= 1000;
+        cfg_citl = !cisla ? 700 : c < 100 ? 100 : c > 1000 ? 1000 : c;
+        if (cfg_hw && cfg_citl < 1000) { void *f = (void *)hw_setcursorpos; zapis((void *)0x485280, &f, 4); }
+        loguj("kurzor: hardware %d citlivost %d", cfg_hw, cfg_citl);
+    }
+    cfg_nazvy = ini_cislo("Video", "SaveNamesTransparent", 1);
     cfg_dvojklik = ini_cislo("Controls", "DoubleClickWalk", 1);
     if (cfg_dvojklik) hak_volanie(0x4410c5, 0x417949, dvojklik_mysi);     /* udalosť dvojkliku (0x50705c) */
     static const unsigned char zac_zobraz[] = {0x55, 0x8b, 0xec, 0x81, 0xec, 0xa8, 0x00, 0x00, 0x00};

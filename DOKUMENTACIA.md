@@ -76,7 +76,16 @@ Otázka: dá sa kurzor zlepšiť nad súčasných 60 prekreslení za sekundu? Zm
 - **Systémový kurzor Windows cez dgVoodoo** (pokus: presmerované importy SetCursor/ShowCursor hry na šípku Windows): pri zväčšovaní obrazu dgVoodoo fyzický kurzor skryje a kreslí ho sám do obrazu („emulovaný hardvérový kurzor“, CursorScaleFactor) – ale len keď hra pošle snímku. Pri Fps=0 sa šípka hýbala len 25×/s, rovnako ako kurzor hry. Sám o sebe teda nepomôže.
 - **FreeMouse=true** (dgVoodoo nepreváža myš do priestoru 800×600): Windows kreslí skutočný kurzor bez čakania na hru, ale hra dostáva súradnice obrazovky (zmerané 1320, 810 namiesto 0–799 × 0–599) – nepoužiteľné bez vlastného prepočtu.
 
-Možnosti: (a) Fps podľa obnovovacej frekvencie monitora (120/144 Hz) – malá úprava, pomôže len na rýchlejších monitoroch; (b) skutočný kurzor Windows: FreeMouse=true + doplnok prepočíta súradnice všetkých správ myši (okenná procedúra 0x440c79), GetCursorPos/SetCursorPos v bm_core (plynulý kurzor, citlivosť) a 0x43d203, obmedzí kurzor na obraz 4:3 (ClipCursor), z obrázka kurzora hry (strieborný, červený, dvere, predmety, blikanie „fade mouse“) zostaví zväčšený HCURSOR pri každej zmene a kurzor hry skryje. Kurzor by sa hýbal s každým pohybom myši bez oneskorenia vykresľovania hry; je to však veľký zásah. Nič z toho zatiaľ nie je urobené.
+Možnosti: (a) Fps podľa obnovovacej frekvencie monitora (120/144 Hz) – malá úprava, pomôže len na rýchlejších monitoroch; (b) skutočný kurzor Windows: FreeMouse=true + doplnok prepočíta súradnice všetkých správ myši (okenná procedúra 0x440c79), GetCursorPos/SetCursorPos v bm_core (plynulý kurzor, citlivosť) a 0x43d203, obmedzí kurzor na obraz 4:3 (ClipCursor), z obrázka kurzora hry (strieborný, červený, dvere, predmety, blikanie „fade mouse“) zostaví zväčšený HCURSOR pri každej zmene a kurzor hry skryje. Kurzor by sa hýbal s každým pohybom myši bez oneskorenia vykresľovania hry; je to však veľký zásah. Možnosť (b) je urobená inak – pozri „Najplynulejší (hardvérový) kurzor“.
+
+### Najplynulejší (hardvérový) kurzor – `[Cursor] Mode=hardware` (predvolené od 24. 11. 2026)
+Režimy `[Cursor] Mode`: `hardware` = najplynulejší (predvolený), `smooth` = plynulý (prekresľovanie hrou podľa `Fps`, ako doteraz), `original` = pôvodný (25/s). bm_core číta `Mode` tiež: pri `smooth` ponechá `Fps`, pri `original` nastaví Fps 0, pri `hardware` Fps 0 aj citlivosť 1.0 (nevloží žiadny hák kurzora – všetko robí DDraw.dll).
+Riešenie bez FreeMouse (dgVoodoo ďalej drží fyzický kurzor v obdĺžniku 800×600 cez ClipCursor, hra dostáva správne súradnice):
+- **skrytie kurzora hry:** kurzor je animácia scény s poradím −10 (`defmouse`, `mouse pic`, `mouse object` = predmet…). Doplnok v kroku aj pred zobrazením presmeruje jej pixely `+0x24` na vlastné priehľadné pole (purpurová); šablóny hry sa nemenia. Pôvodné pixely skopíruje pre okno kurzora; keď hra kurzor zmení (nová animácia alebo nový ukazovateľ), zopakuje to a scénu hneď prekreslí (`0x426c43`), aby na obrazovku nešla snímka s kurzorom hry. Posun obrázka voči myši = poloha animácie − posun scény − `0x506ff0/0x506fa8`.
+- **okno kurzora:** samostatné vlákno vytvorí okno `WS_EX_LAYERED | TRANSPARENT | TOPMOST | NOACTIVATE | TOOLWINDOW` **bez vlastníka** (s vlastníkom = okno hry čakal každý `SetWindowPos` na herné vlákno → len 25 presunov/s). Obrázok zväčší bilineárne mierkou obrazu (výška klientskej oblasti / 600, obraz na stred), premultiplikovaná alfa, `UpdateLayeredWindow`. Každú 1 ms (`timeBeginPeriod(1)`) prečíta `GetCursorPos`, poloha v hre = poloha − ľavý horný roh `GetClipCursor` (800×600), a okno presunie (`SWP_NOZORDER`). Skryje sa, keď hra nie je v popredí, je minimalizovaná, beží film alebo kurzor hry neexistuje.
+- **citlivosť** v tomto režime počíta to isté vlákno (ako bm_core: rozdiel × citlivosť v tisícinách, `SetCursorPos`), inak by okno ukazovalo striedavo nepreškálovanú a preškálovanú polohu. Keď kurzor presunie hra sama, import `SetCursorPos` (0x485280) je presmerovaný a nastaví znovunačítanie polohy bez násobenia.
+Zmerané 24. 11. 2026 (myš krúži cez SetCursorPos, snímanie mss 60/s, hala): **hardware 59–60 zmien obrazu/s** (strop merania = 60 Hz monitor), smooth 35–38/s, original 25/s. Citlivosť 0.7: 40 × 5 mickey → 205 px pri 1.0, 144 px pri 0.7 (0,70). Overené: strieborný, červený nad obrazom, dvere nad východom, značky medzerníka s červeným kurzorom, predmet z kolieska, hlavná ponuka, Win+D skryje okno a návrat ho ukáže, obrazovka nahrávania.
+Poznámka k meraniu z prieskumu: ranných „60/s“ pri Fps=60 ovplyvnila šípka dgVoodoo z pokusu; bez nej má smooth v tomto meraní 35–38 zmien/s.
 
 ## Citlivosť kurzora (config.ini [Cursor] Sensitivity)
 `Sensitivity=0.5` (predvolené), rozsah 0.1–1.0 (mimo rozsahu sa orezá, nečitateľná hodnota = 0.5; desatinná bodka aj čiarka). Násobok pohybu myši: 1.0 = rýchlosť pôvodnej hry.
@@ -96,7 +105,7 @@ Meranie (19. 11. 2026, hlavná ponuka, relatívny pohyb cez `SendInput` vrátane
 Plynulý kurzor rýchlosť nemení (Fps 60 = pôvodná hra), citlivosť 0.5 presne polovičná. Od 23. 11. 2026 je predvolená citlivosť **0.7** (config.ini aj predvolená hodnota v kóde, keď kľúč chýba).
 
 ## Doplnok pohodlia (DDraw.dll v C, 23. 11. 2026)
-Reťaz knižníc: hra → `DDraw.dll` (nový doplnok, `doplnok/bm_qol.c`) → všetky exporty preposlané na `bm_core.dll` (doterajší doplnok v assembleri: filmy, plynulý kurzor, citlivosť – len premenovaný) → `dgddraw.dll` (dgVoodoo2). Prekladá sa cez `zig cc` (Python balík `ziglang`), bez CRT, importuje len kernel32/user32; `doplnok/zostav.bat`, oba doplnky naraz `build_plugin.bat`.
+Reťaz knižníc: hra → `DDraw.dll` (nový doplnok, `doplnok/bm_qol.c`) → všetky exporty preposlané na `bm_core.dll` (doterajší doplnok v assembleri: filmy, plynulý kurzor, citlivosť – len premenovaný) → `dgddraw.dll` (dgVoodoo2). Prekladá sa cez `zig cc` (Python balík `ziglang`), bez CRT, importuje kernel32/user32/gdi32 (winmm sa načíta za behu); `doplnok/zostav.bat`, oba doplnky naraz `build_plugin.bat`.
 
 Háky (v pamäti, pred zápisom sa overia pôvodné bajty; iná verzia exe → nič):
 | adresa | čo | použitie |
@@ -107,7 +116,10 @@ Háky (v pamäti, pred zápisom sa overia pôvodné bajty; iná verzia exe → n
 | 0x44112b `call [DefWindowProcA]` | ostatné správy okna | WM_MOUSEWHEEL |
 | 0x42e416, 0x43a228 `call 0x433708` | načítanie uloženej hry (slot) | obnova zapamätaných nastavení |
 | 0x42b8af `call 0x43a112` | skript zapisuje celočíselnú systémovú premennú (meno, hodnota) | zapamätanie nastavení |
-| 0x43e78f (začiatok, 9 B → mostík) | zobrazenie (Blt zadného povrchu) | FXAA pred zväčšením, značky hotspotov |
+| 0x43e78f (začiatok, 9 B → mostík) | zobrazenie (Blt zadného povrchu) | FXAA pred zväčšením, pretáčanie bez snímok, názvy pozícií, skrytie kurzora hry |
+| 0x408c5c (začiatok, 7 B → mostík) | kurzor nad objektom | červený kurzor nad východom pri značkách |
+| 0x4410c5 `call 0x417949` | udalosť dvojkliku | pretočenie chôdze |
+| import SetCursorPos 0x485280 | hra presúva kurzor | hardvérový kurzor s citlivosťou: znovunačítanie polohy |
 
 ### config.ini
 ```ini
@@ -118,7 +130,10 @@ HoldToSkip=1      ; ESC/medzerník v rozhovore = preskočenie po ďalšiu replik
 SaveLoadKeys=1    ; F5 = uložiť, F8 = nahrať
 WheelInventory=1  ; koliesko = predmety inventára
 DoubleClickWalk=1 ; dvojklik = pretočenie chôdze (postava hneď v cieli)
+[Cursor]
+Mode=hardware     ; hardware = najplynulejší (vlastné okno), smooth = prekresľovanie hrou (Fps), original
 [Video]
+SaveNamesTransparent=1 ; názvy pozícií bez čierneho obdĺžnika
 Smoothing=1       ; FXAA pred zväčšením (1 = postavy, 2 = plocha scény) (SmoothingThreshold=25, SmoothingThresholdMin=16, SmoothingSubpixel=75)
 [Settings]
 Remember=1        ; nastavenia nezávislé od uloženej hry
@@ -187,6 +202,14 @@ Hlavná postava: poloha `0x49be28`/`0x49be2c`, stav `[0x49be3a]` – 0 stojí, 1
 Doplnok: hák na `call 0x417949` v 0x4410c5 (len udalosť dvojkliku) – v hernej scéne (hex meno, hráč má kontrolu, nebeží pretáčanie) zapne režim pretáčania chôdze. V kroku: kým stav ≠ 0, logika nečaká na ďalší krok (`0x49bda0 -= krok`), jednorazové zvuky (kroky) sa zastavia a funkcia zobrazenia nič neposiela na obrazovku. Koniec: postava zastaví, zmena scény, film, preskakovanie, 500 krokov, alebo ak chôdza do 5 krokov nezačne. Ďalší dej (replika pri predmete, prechod do inej scény) beží normálne.
 Zmerané 24. 11. 2026 v hale: podlaha 96 krokov chôdze za 78 ms (pôvodne 3,7 s), obraz 118 krokov → Samuel hneď pri obraze a hovorí repliku, zamknuté dvere do spoločenskej miestnosti 161 krokov → replika, východ vľavo dole 32 krokov → hneď scéna 10b5. Jednoduchý klik = normálna chôdza. Dvojklik v detailnom zábere (19d5) nič nemení.
 `[Controls] DoubleClickWalk=0` hák nevloží.
+
+### Obrazovka Uložit/Nahrát hru – názvy pozícií bez čierneho obdĺžnika (24. 11. 2026)
+Obrazovka `1006.101b` (uloženie aj nahrávanie). Názvy pozícií sú animácie `1006.101b.100b.N` (text na čiernom pozadí 0,0,0; poradie 10), bodkovaná čiara za nimi je priamo v pozadí `ulozit_hru.bmp` (800×600, 2 riadky bodiek 12–13 px pod vrchom názvu); čierny obdĺžnik ju pod textom zakrýval.
+Doplnok (každý krok aj pred zobrazením – editovaný názov hra s blikajúcim kurzorom vytvára každý krok nanovo a hneď ho vykreslí): čisté čierne pixely názvov → priehľadná purpurová; v pozadí si uloží pôvodný pás (x 280–640, y 150–460) a pod šírkou každého názvu nahradí riadky s bodkami (viac ako 15 svetlých pixelov) najbližším riadkom bez bodiek nad nimi; pri zmene šírky názvu (písanie) sa pás obnoví. Pri zmene sa scéna prekreslí (`0x426c43`). `[Video] SaveNamesTransparent=0` vypne.
+Overené: nahrávanie (8 pozícií), ukladanie s písaním názvu „abc d“ a mazaním (po zmazaní sa bodky vrátia), bez uloženia (ESC).
+
+### Ľavé tlačidlo myši v rozhovore
+Overené 24. 11. 2026 (úvodný rozhovor v salóne, vstup každých 1,5 s, 15 s): bez vstupu 6 replík, ľavé tlačidlo 11, medzerník 11 – ľavé tlačidlo preskakuje repliky natívne rovnako ako medzerník, doplnok ho nemení.
 
 ### Zapamätané nastavenia
 Štartovací skript `main` pri **každom spustení hry** nastaví `tell_mode=2` (titulky vypnuté), `tell_volume=85`, `sound_volume=100`, `music_volume=80`; uložená hra obsahuje systémové premenné a pri načítaní ich prepíše (napr. save.1 mal `sound_volume=5`).

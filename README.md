@@ -19,12 +19,14 @@
   *Sharper picture* – the 800×600 picture is upscaled to your resolution with a sharper filter (lanczos-3).
 - **Vyhladenie postáv** – zubaté hrany postáv sa vyhladia ešte pred zväčšením obrazu. Ponuky, titulky a texty sa nevyhladzujú, takže písmo ostáva čisté.<br>
   *Character smoothing* – jagged edges of characters are smoothed before the picture is upscaled. Menus, subtitles and texts are not smoothed, so the font stays clean.
+- **Názvy uložených hier bez čierneho obdĺžnika** – na obrazovke Uložiť/Nahrať hru sú názvy pozícií priamo na pozadí ako bodky vedľa nich, aj počas písania nového názvu.<br>
+  *Save names without the black rectangle* – on the Save/Load game screen the save names sit directly on the background like the dots next to them, also while typing a new name.
 - **Bez zvyškov na obrazovke** – po rýchlom pohybe myši už nezostávajú na obraze zvyšky nápisov a kurzora.<br>
   *No leftovers on screen* – fast mouse movement no longer leaves traces of labels and the cursor.
 
 ### Myš / Mouse
-- **Plynulý kurzor** – kurzor sa prekresľuje 60-krát za sekundu namiesto 25. Hra pritom ide rovnakou rýchlosťou ako pôvodne.<br>
-  *Smooth cursor* – the cursor is redrawn 60 times per second instead of 25. The game itself runs at its original speed.
+- **Najplynulejší kurzor (hardvérový)** – kurzor sa hýbe pri každom pohybe myši, nezávisle od toho, koľko snímok kreslí hra (tá kreslí 25 za sekundu). Pôvodný kurzor sa hýbal len 25-krát za sekundu. Hra pritom ide rovnakou rýchlosťou ako pôvodne. V `config.ini` sa dá prepnúť aj na plynulý kurzor (hra ho prekresľuje 60-krát za sekundu) alebo na pôvodný.<br>
+  *Smoothest cursor (hardware)* – the cursor moves with every mouse movement, independently of how many frames the game draws (it draws 25 per second). The original cursor moved only 25 times per second. The game itself runs at its original speed. In `config.ini` you can also switch to the smooth cursor (redrawn by the game 60 times per second) or to the original one.
 - **Citlivosť myši** – kurzor je predvolene pomalší (0.7 z pôvodnej rýchlosti), dá sa nastaviť.<br>
   *Mouse sensitivity* – the cursor is slower by default (0.7 of the original speed) and can be adjusted.
 - **Dvojklik = postava hneď v cieli** – po dvojkliku na miesto v scéne sa postava objaví v cieli bez animácie chôdze. Pri dvojkliku na predmet alebo východ je hneď pri ňom a hra pokračuje (prezretie, použitie, prechod do ďalšej scény).<br>
@@ -40,7 +42,7 @@
 | **F5** | obrazovka Uložit hru (ESC vráti rovno do hry) | Save game screen (ESC returns straight to the game) |
 | **F8** | obrazovka Nahrát hru (ESC vráti rovno do hry) | Load game screen (ESC returns straight to the game) |
 | **medzerník / Space** v hre / in game | na 2 sekundy (ako Tab, pri držaní stále) ukáže všetky aktívne miesta v scéne: východy ikonou dverí, ostatné miesta krúžkom; kurzor je nad nimi červený (ako pri Tab) | shows all hotspots in the scene for 2 seconds (like Tab, permanently while held): exits with a door icon, everything else with a ring; the cursor turns red over them (like with Tab) |
-| **medzerník / Space** v rozhovore / in dialogue | preskočí jednu repliku (aj vetu rozprávača) | skips one line (also a narrator sentence) |
+| **medzerník / Space** alebo **ľavé tlačidlo myši / left mouse button** v rozhovore / in dialogue | preskočí jednu repliku (aj vetu rozprávača) | skips one line (also a narrator sentence) |
 | **ESC** v rozhovore / in dialogue | preskočí repliku aj všetky animácie a hudbu po nej až po ďalšiu repliku | skips the line plus all animations and music after it, up to the next line |
 | **ESC** podržaný / held, v rozhovore / in dialogue | preskočí celý rozhovor až po chvíľu, keď znova ovládaš hru | skips the whole conversation until you are in control again |
 | **Tab** | na 2 sekundy ukáže východy (pôvodná funkcia hry) | shows the exits for 2 seconds (original game feature) |
@@ -94,7 +96,8 @@ Inštalácia skopíruje do priečinka hry knižnice `DDraw.dll`, `bm_core.dll`, 
 | Sekcia, kľúč / Section, key | Predvolené / Default | Význam | Meaning |
 |---|---|---|---|
 | `[Movies] FullWidth` | 1 | filmy na celú šírku (0 = v obraze 4:3) | full-width movies (0 = inside the 4:3 picture) |
-| `[Cursor] Fps` | 60 | prekresľovanie kurzora za sekundu (0 = ako pôvodná hra) | cursor redraws per second (0 = like the original game) |
+| `[Cursor] Mode` | hardware | kurzor: `hardware` = najplynulejší (hardvérový), `smooth` = plynulý, `original` = pôvodný | cursor: `hardware` = smoothest (hardware cursor), `smooth`, `original` |
+| `[Cursor] Fps` | 60 | prekresľovanie kurzora za sekundu v režime `smooth` | cursor redraws per second in `smooth` mode |
 | `[Cursor] Sensitivity` | 0.7 | citlivosť myši 0.1 – 1.0 (1.0 = pôvodná rýchlosť) | mouse sensitivity 0.1 – 1.0 (1.0 = original speed) |
 | `[Controls] EscapeMenu` | 1 | ESC otvorí ponuku | ESC opens the menu |
 | `[Controls] SpaceHotspots` | 1 | medzerník ukáže aktívne miesta | Space shows hotspots |
@@ -102,6 +105,7 @@ Inštalácia skopíruje do priečinka hry knižnice `DDraw.dll`, `bm_core.dll`, 
 | `[Controls] SaveLoadKeys` | 1 | F5 = uložiť, F8 = nahrať | F5 = save, F8 = load |
 | `[Controls] WheelInventory` | 1 | koliesko myši listuje inventárom | mouse wheel cycles the inventory |
 | `[Controls] DoubleClickWalk` | 1 | dvojklik = postava hneď v cieli | double-click = character arrives instantly |
+| `[Video] SaveNamesTransparent` | 1 | názvy uložených hier bez čierneho obdĺžnika | save names without the black rectangle |
 | `[Video] Smoothing` | 1 | vyhladenie: 1 = postavy, 2 = celá scéna, 0 = vypnuté | smoothing: 1 = characters, 2 = whole scene, 0 = off |
 | `[Video] SmoothingThreshold` | 25 | citlivosť vyhladenia (vyššie číslo = menej vyhladených hrán) | smoothing sensitivity (higher = fewer edges smoothed) |
 | `[Settings] Remember` | 1 | pamätať nastavenia bez ohľadu na uloženú hru | remember settings regardless of the saved game |

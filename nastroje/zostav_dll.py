@@ -25,6 +25,8 @@ Ako to funguje:
     (presnosť 1/1000 px, zlomky sa zachovajú) a kurzor sa presunie SetCursorPos. Len keď je hra v popredí
     (GetForegroundWindow = okno hry 0x5850e8). Poloha sa znova načíta bez násobenia, keď hru presunie kurzor sama
     (hák na jej SetCursorPos v 0x43d203), po návrate do hry a po pauze dlhšej ako 5 krokov.
+  * [Cursor] Mode: smooth = prekresľovanie podľa Fps (vyššie), original = bez prekresľovania, hardware (predvolené)
+    = kurzor kreslí DDraw.dll vo vlastnom okne aj s citlivosťou -> tu sa nevloží nič pre kurzor (Fps 0, citlivosť 1.0).
 
 Použitie:  python zostav_dll.py VYSTUP.dll
 """
@@ -35,7 +37,7 @@ import sys
 import keystone
 
 RVA = 0x1000
-O_KOD, O_DATA, O_IMPORT, O_EXPORT, O_CESTA, O_KONIEC = 0x000, 0x800, 0xA00, 0xC00, 0x1000, 0x1200
+O_KOD, O_DATA, O_IMPORT, O_EXPORT, O_CESTA, O_KONIEC = 0x000, 0x900, 0xB00, 0xD00, 0x1100, 0x1300
 
 # dáta (posuny od O_DATA)
 DATA = {
@@ -59,12 +61,13 @@ DATA = {
     "POSLV": 0xD8, "POSLV4": 0xDC,       # QPC posledného volania háku
     "TEXT": 0xE0,                        # text hodnoty Sensitivity (32 B)
     "K_SENS": 0x100, "D_SENS": 0x110,
+    "K_MODE": 0x120, "D_MODE": 0x128,    # [Cursor] Mode (hardware / smooth / original), predvolené hardware
     "DGMENO": 0x60,      # "dgddraw.dll"
     "S_MOVIES": 0x70, "K_FULLWIDTH": 0x80, "S_CURSOR": 0x90, "K_FPS": 0xA0, "INIMENO": 0xB0,
 }
 RETAZCE = {"DGMENO": "dgddraw.dll", "S_MOVIES": "Movies", "K_FULLWIDTH": "FullWidth",
            "S_CURSOR": "Cursor", "K_FPS": "Fps", "INIMENO": "config.ini",
-           "K_SENS": "Sensitivity", "D_SENS": "0.7"}
+           "K_SENS": "Sensitivity", "D_SENS": "0.7", "K_MODE": "Mode", "D_MODE": "hardware"}
 
 IMPORTY = {
     "KERNEL32.dll": ["VirtualProtect", "GetModuleHandleA", "GetModuleFileNameA", "GetPrivateProfileIntA",
@@ -237,6 +240,28 @@ dm_citl_min:
 dm_citl_max:
     mov dword ptr [ebx + {CITL}], eax
     mov dword ptr [ebx + {RESYNC}], 1
+
+    lea eax, [ebx + {CESTA}]
+    push eax
+    push 32
+    lea eax, [ebx + {TEXT}]
+    push eax
+    lea eax, [ebx + {D_MODE}]
+    push eax
+    lea eax, [ebx + {K_MODE}]
+    push eax
+    lea eax, [ebx + {S_CURSOR}]
+    push eax
+    call dword ptr [ebx + {IAT_GPPS}]
+    movzx eax, byte ptr [ebx + {TEXT}]
+    or eax, 0x20
+    cmp eax, 0x73
+    je dm_rezim_ok
+    mov dword ptr [ebx + {FPS}], 0
+    cmp eax, 0x6f
+    je dm_rezim_ok
+    mov dword ptr [ebx + {CITL}], 1000
+dm_rezim_ok:
 
     cmp dword ptr [ebx + {FPS}], 0
     jne dm_hak_kurzor
