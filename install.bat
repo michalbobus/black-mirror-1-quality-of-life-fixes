@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 >nul
+rem Súbor je v kódovaní 852 (OEM slovenského/českého Windows), cmd ho vypíše bez chcp - chcp 65001 by prepol okno na staré bodové písmo
 setlocal
 rem Cesta k hre: parameter (aj pretiahnutie priečinka hry na tento súbor), inak priečinok nad týmto,
 rem inak tento priečinok, inak hľadanie v Steame (najdi_hru.ps1).
@@ -10,7 +10,7 @@ if not defined HRA if exist "%~dp0agds.exe" set "HRA=%~dp0."
 if not defined HRA for /f "usebackq delims=" %%P in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0najdi_hru.ps1"`) do set "HRA=%%P"
 if not defined HRA set "HRA=(nenájdená)"
 if not exist "%HRA%\agds.exe" (
-  echo Nenašiel som hru Black Mirror ^(agds.exe^) – ani v Steame.
+  echo Nenašiel som hru Black Mirror ^(agds.exe^) - ani v Steame.
   echo Black Mirror ^(agds.exe^) was not found, not even in Steam.
   echo Pretiahni priečinok hry na tento súbor alebo spusti: %~nx0 "cesta\k\hre"
   echo Drag the game folder onto this file or run: %~nx0 "path\to\game"
@@ -31,12 +31,12 @@ set "JAZYK=%~2"
 if defined JAZYK goto config_zapis
 echo.
 if exist "%HRA%\config.ini" (
-  echo config.ini už v hre je – 0 = ponechať ^(nastavenia ostanú^), alebo vyber jazyk nových predvolených nastavení.
-  echo config.ini already exists – 0 = keep it ^(settings are kept^), or choose a language for new default settings.
-  choice /c 0123 /n /m "0 = ponechat / keep, 1 = slovensky, 2 = cesky, 3 = English: "
+  echo config.ini už v hre je - 0 = ponechať ^(nastavenia ostanú^), alebo vyber jazyk nových predvolených nastavení.
+  echo config.ini already exists - 0 = keep it ^(settings are kept^), or choose a language for new default settings.
+  choice /c 0123 /n /m "0 = ponechať / keep, 1 = slovensky, 2 = česky, 3 = English: "
 ) else (
   echo Jazyk poznámok v config.ini / Language of the comments in config.ini:
-  choice /c 123 /n /m "1 = slovensky, 2 = cesky, 3 = English: "
+  choice /c 123 /n /m "1 = slovensky, 2 = česky, 3 = English: "
 )
 set "VOLBA=%errorlevel%"
 if exist "%HRA%\config.ini" set /a VOLBA-=1
@@ -54,7 +54,7 @@ rem agds.cfg: optimizedraw=0 = hra posiela na obrazovku vždy celú snímku (ina
 findstr /i /b "optimizedraw=" "%HRA%\agds.cfg" >nul || (>>"%HRA%\agds.cfg" echo optimizedraw=0) || goto chyba
 rem agds.cfg: videomem=0 = zadný povrch v systémovej pamäti (rýchle kreslenie, potrebné pre plynulý kurzor)
 findstr /i /b "videomem=" "%HRA%\agds.cfg" >nul || (>>"%HRA%\agds.cfg" echo videomem=0) || goto chyba
-rem Pri škálovaní Windows nad 100 % by okno vyšlo väčšie ako obrazovka – hra dostane príznak HIGHDPIAWARE
+rem Pri škálovaní Windows nad 100 % by okno vyšlo väčšie ako obrazovka - hra dostane príznak HIGHDPIAWARE
 reg add "HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" /v "%HRA%\agds.exe" /t REG_SZ /d "~ HIGHDPIAWARE" /f >nul || goto chyba
 echo Hotovo: úpravy pre Black Mirror nainštalované do "%HRA%".
 echo Done: Black Mirror improvements installed to "%HRA%".
