@@ -27,6 +27,7 @@ PRED.update({("Cursor", "Mode"): "original", ("Cursor", "Sensitivity"): "1.0"})
 def profil(verzia): return PRED if verzia == "pred" else PO
 
 def nastav(profil):
+    _povodne()          # pred prvou zmenou odloží hodnoty používateľa (koniec() ich vráti)
     for (s, k), v in profil.items():
         ctypes.windll.kernel32.WritePrivateProfileStringW(s, k, v, CFG)
 
@@ -226,7 +227,6 @@ def _povodne():
     """Hodnoty config.ini pred prvým nahrávaním – uložia sa do súboru, aby ich neprepísal ani prerušený beh."""
     if not os.path.exists(POVODNE): json.dump(_precitaj_profil(), open(POVODNE, "w"), indent=1)
     return json.load(open(POVODNE))
-_povodne()
 
 def koniec():
     """Po nahrávaní: ukončí hru a vráti kľúče, ktoré mení profil, na hodnoty pred nahrávaním (chýbajúci kľúč zmaže)."""

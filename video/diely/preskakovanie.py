@@ -13,6 +13,12 @@ def _stav(h):
     a = struct.unpack("<i", pamat.citaj(h, 0x48b658, 4))[0]; b = struct.unpack("<i", pamat.citaj(h, 0x48b678, 4))[0]
     return scena, a == 1 and b == 1
 
+def _titulky():
+    """Pás titulkov (hra y 556–600 = obrazovka y 1000–1080): svetlé písmo."""
+    from PIL import ImageGrab
+    a = np.asarray(ImageGrab.grab(bbox=(240, 1000, 1680, 1080)).convert("L"))
+    return int((a > 120).sum()) > 200
+
 def nahraj(verzia):
     spusti(profil(verzia)); h = pamat.otvor(pamat.pid_hry())
     klik(400, 197); time.sleep(3)
@@ -28,6 +34,11 @@ def nahraj(verzia):
         while _stav(h)[0] == "123f" and time.time() - z0 < 400: time.sleep(0.03)    # rozprávač
         z.znacka("salon")
         while not _stav(h)[1] and time.time() - z0 < 400: time.sleep(0.03)          # rozhovor v salóne
+        # hra hlási kontrolu už pred Samuelovým monológom v hale – čakať, kým 1 s nie sú titulky
+        posl_titulok = time.time()
+        while time.time() - posl_titulok < 1.0 and time.time() - z0 < 400:
+            if _titulky(): posl_titulok = time.time()
+            time.sleep(0.05)
         if verzia == "po": pusti(0x1B)
         z.znacka("kontrola")
         time.sleep(2); klik(330, 500); time.sleep(4)

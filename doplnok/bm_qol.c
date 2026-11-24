@@ -784,7 +784,9 @@ static DWORD WINAPI hw_vlakno(LPVOID nic)
         while (PeekMessageA(&m, 0, 0, 0, PM_REMOVE)) DispatchMessageA(&m);
         Sleep(1);
         HWND hra = HWND_HRY;
-        int vid = hw_viditelny && hra && GetForegroundWindow() == hra && !IsIconic(hra);
+        /* FILM_BEZI aj tu: film má vlastnú slučku, krok hry (hw_kurzor_hra) počas neho nebeží a hw_viditelny
+         * by ostalo z ponuky – nad filmom by visel kurzor (napr. červený z Nová hra) */
+        int vid = hw_viditelny && !FILM_BEZI && hra && GetForegroundWindow() == hra && !IsIconic(hra);
         if (!vid) { if (ukazane) { ShowWindow(okno, SW_HIDE); ukazane = 0; } hw_resync = 1; continue; }
         /* obraz hry v okne: 800×600 zväčšené so zachovaným pomerom, na stred klientskej oblasti */
         RECT rc; GetClientRect(hra, &rc);

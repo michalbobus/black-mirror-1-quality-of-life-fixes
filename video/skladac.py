@@ -105,12 +105,15 @@ def zastav(k, trvanie):
     return Klip(out, k.dlzka + trvanie)
 
 def za_sebou(*klipy):
-    """Spojí klipy (bez prechodov) – rovnaké parametre, preto stačí kopírovanie."""
+    """Spojí klipy za sebou (filter concat s novým kódovaním – kopírovanie cez concat demuxer strácalo
+    pri nadväzovaní časových značiek až sekundy z dielov)."""
     out = _meno("za_sebou", *[k.cesta for k in klipy]) + ".mp4"
     if not os.path.exists(out):
-        zoz = out + ".txt"
-        open(zoz, "w", encoding="utf-8").write("".join(f"file '{k.cesta.replace(os.sep, '/')}'\n" for k in klipy))
-        ff("-f", "concat", "-safe", "0", "-i", zoz, "-c", "copy", out)
+        vst = []
+        for k in klipy: vst += ["-i", k.cesta]
+        f = "".join(f"[{i}:v]settb=1/{FPS},setpts=PTS-STARTPTS[v{i}];[{i}:a]asetpts=PTS-STARTPTS[a{i}];" for i in range(len(klipy)))
+        f += "".join(f"[v{i}][a{i}]" for i in range(len(klipy))) + f"concat=n={len(klipy)}:v=1:a=1[v][a]"
+        ff(*vst, "-filter_complex", f, "-map", "[v]", "-map", "[a]", *ENC, out)
     return Klip(out, sum(k.dlzka for k in klipy))
 
 # ---------------- grafika (PNG cez PIL) ----------------
