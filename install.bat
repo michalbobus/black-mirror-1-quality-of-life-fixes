@@ -24,11 +24,32 @@ copy /y "%~dp0dgvoodoo\DDraw.dll"      "%HRA%\" >nul || goto chyba
 copy /y "%~dp0dgvoodoo\bm_core.dll"    "%HRA%\" >nul || goto chyba
 copy /y "%~dp0dgvoodoo\D3DImm.dll"     "%HRA%\" >nul || goto chyba
 copy /y "%~dp0dgvoodoo\dgVoodoo.conf"  "%HRA%\" >nul || goto chyba
-rem config.ini (zapnutie/vypnutie jednotlivých úprav) – existujúce nastavenie sa neprepíše;
-rem poznámky v ňom po slovensky pri slovenskom/českom Windows, inak anglická verzia config.en.ini
-set "CFG=config.en.ini"
-for /f "usebackq delims=" %%L in (`powershell -NoProfile -Command "(Get-UICulture).TwoLetterISOLanguageName"`) do if /i "%%L"=="sk" (set "CFG=config.ini") else if /i "%%L"=="cs" set "CFG=config.ini"
-if not exist "%HRA%\config.ini" copy /y "%~dp0dgvoodoo\%CFG%" "%HRA%\config.ini" >nul || goto chyba
+rem config.ini (zapnutie/vypnutie jednotlivých úprav): jazyk poznámok si vyberie hráč (config.sk/cs/en.ini).
+rem Druhý parameter sk/cs/en výber preskočí (napr. install.bat "cesta" en). Existujúci config.ini sa prepíše
+rem len ak si hráč výslovne vyberie jazyk (nastavenia sa tým vrátia na predvolené).
+set "JAZYK=%~2"
+if defined JAZYK goto config_zapis
+echo.
+if exist "%HRA%\config.ini" (
+  echo config.ini už v hre je – 0 = ponechať ^(nastavenia ostanú^), alebo vyber jazyk nových predvolených nastavení.
+  echo config.ini already exists – 0 = keep it ^(settings are kept^), or choose a language for new default settings.
+  choice /c 0123 /n /m "0 = ponechat / keep, 1 = slovensky, 2 = cesky, 3 = English: "
+) else (
+  echo Jazyk poznámok v config.ini / Language of the comments in config.ini:
+  choice /c 123 /n /m "1 = slovensky, 2 = cesky, 3 = English: "
+)
+set "VOLBA=%errorlevel%"
+if exist "%HRA%\config.ini" set /a VOLBA-=1
+if "%VOLBA%"=="1" set "JAZYK=sk"
+if "%VOLBA%"=="2" set "JAZYK=cs"
+if "%VOLBA%"=="3" set "JAZYK=en"
+if not defined JAZYK goto config_hotovo
+:config_zapis
+if exist "%HRA%\config.ini" if not "%~2"=="" goto config_hotovo
+if not exist "%~dp0dgvoodoo\config.%JAZYK%.ini" set "JAZYK=en"
+copy /y "%~dp0dgvoodoo\config.%JAZYK%.ini" "%HRA%\config.ini" >nul || goto chyba
+echo config.ini: %JAZYK%
+:config_hotovo
 rem agds.cfg: optimizedraw=0 = hra posiela na obrazovku vždy celú snímku (inak ostávajú zvyšky nápisov a kurzora)
 findstr /i /b "optimizedraw=" "%HRA%\agds.cfg" >nul || (>>"%HRA%\agds.cfg" echo optimizedraw=0) || goto chyba
 rem agds.cfg: videomem=0 = zadný povrch v systémovej pamäti (rýchle kreslenie, potrebné pre plynulý kurzor)

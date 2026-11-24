@@ -208,9 +208,9 @@ Overené v salóne: obdĺžniky sedia na všetkých 4 NPC aj na Samuelovi (`snim
 Neskúšané (nebolo treba): ReShade (FXAA/SMAA by pracovalo až na zväčšenom obraze z dgVoodoo, nie pred zväčšením), zväčšovače xBR/ScaleFX/FSR (dgVoodoo vlastné shadery nepodporuje).
 
 ## Inštalácia
-- `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `bm_core.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (ten len ak ešte neexistuje) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
+- `install.bat` – skopíruje do hry `dgddraw.dll`, `DDraw.dll`, `bm_core.dll`, `D3DImm.dll`, `dgVoodoo.conf` a `config.ini` (jazyk podľa výberu, existujúci len so súhlasom) a zapíše príznak DPI (voliteľný parameter: cesta k hre)
 - `uninstall.bat` – súbory zmaže a príznak odstráni
-- `config.ini` sa kopíruje len ak v hre ešte nie je; jazyk poznámok podľa jazyka Windows (`(Get-UICulture).TwoLetterISOLanguageName`): `sk` alebo `cs` → `dgvoodoo/config.ini` (slovensky), inak `dgvoodoo/config.en.ini` (anglicky, rovnaké kľúče a hodnoty). Hlášky dávok sú slovensky aj anglicky. Overené 24. 11. 2026 oboma vetvami (iný jazyk vynútený v kópii dávky).
+- `config.ini`: jazyk poznámok si vyberie hráč (`choice`): 1 = `dgvoodoo/config.sk.ini`, 2 = `config.cs.ini`, 3 = `config.en.ini` (rovnaké kľúče a hodnoty, v hre vždy ako `config.ini`). Ak `config.ini` v hre už je, ponuka má navyše 0 = ponechať (predvolené po stlačení 0); výber jazyka ho prepíše predvolenými hodnotami. Druhý parameter `sk`/`cs`/`en` výber preskočí a existujúci `config.ini` neprepíše (`install.bat "cesta" cs`). Riadok voľby je bez diakritiky (výstup `choice` v UTF-8 konzole). Overené 24. 11. 2026: parameter cs, nový config + 3, existujúci + 0 (ponechaný), existujúci + 1 (prepísaný slovenským). Hlášky dávok sú slovensky aj anglicky.
 - Cesta k hre (obe dávky): parameter / pretiahnutý priečinok, inak priečinok nad dávkou alebo priečinok dávky (ak obsahuje `agds.exe`), inak `najdi_hru.ps1` – cesta Steamu z registra (HKCU/HKLM `Valve\Steam` SteamPath/InstallPath) a všetky knižnice z `steamapps\libraryfolders.vdf`, hľadá `steamapps\common\Black Mirrorgds.exe`. Overené 24. 11. 2026: inštalácia bez parametra našla hru, odinštalovanie odstránilo všetky súbory aj riadky v agds.cfg, nová inštalácia ich vrátila.
 
 ## Overené v hre (19. 11. 2026, 1920×1080, Windows 125 %)
