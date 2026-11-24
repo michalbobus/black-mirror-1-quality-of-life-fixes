@@ -933,14 +933,15 @@ static void priehladne_nazvy(void)
 static int __cdecl nacitaj_hru(int slot);
 static int cfg_rychle, cfg_rychla_pozicia = 98, jazyk;     /* jazyk hlášok: 0 sk, 1 cs, 2 en (podľa config.ini) */
 static int rychle_ziadost;                                  /* 1 = uložiť, 2 = načítať */
+static unsigned cez_ponuku;                                 /* krok, od ktorého rýchle načítanie čaká, kým Samuel zastane */
 static unsigned char *hlaska_anim, *hlaska_scena;
 static unsigned hlaska_do;
-static const wchar_t *const TEXTY[3][5] = {
-    {L"Rýchle uloženie", L"Rýchle načítanie", L"Rýchla pozícia ešte nie je uložená", L"Teraz sa nedá uložiť", L"Rýchle uloženie"},
-    {L"Rychlé uložení", L"Rychlé nahrání", L"Rychlá pozice ještě není uložená", L"Teď nelze uložit", L"Rychlé uložení"},
-    {L"Quick save", L"Quick load", L"No quick save yet", L"Cannot save now", L"Quick save"},
+static const wchar_t *const TEXTY[3][6] = {
+    {L"Rýchle uloženie", L"Rýchle načítanie", L"Rýchla pozícia ešte nie je uložená", L"Teraz sa nedá uložiť", L"Rýchle uloženie", L"Teraz sa nedá načítať"},
+    {L"Rychlé uložení", L"Rychlé nahrání", L"Rychlá pozice ještě není uložená", L"Teď nelze uložit", L"Rychlé uložení", L"Teď nelze nahrát"},
+    {L"Quick save", L"Quick load", L"No quick save yet", L"Cannot save now", L"Quick save", L"Cannot load now"},
 };
-enum { T_ULOZENE, T_NACITANE, T_NIE_JE, T_NEDA_SA, T_MENO };
+enum { T_ULOZENE, T_NACITANE, T_NIE_JE, T_NEDA_SA, T_MENO, T_NEDA_SA_NACITAT };
 
 /* Texty hry sú v kódovaní Kamenických (zistené z pamäte: „ke schodišti“ š = 0xA8, „jídelny“ í = 0xA1),
  * písmo titulkov má znaky na týchto pozíciách (cp1250 ž 0x9E sa kreslilo ako Ř). */
@@ -989,13 +990,29 @@ static void hlaska(int i)
 static void rychle_krok(void)
 {
     if (hlaska_anim && (pocet_krokov >= hlaska_do || SCENA != hlaska_scena)) hlaska_zrus();
+    int ponuka = SCENA && !lstrcmpA((char *)SCENA, "1006.100e") && POUZIVATEL_POVOLENY() >= 1;   /* hlavná ponuka */
+    int slot = cfg_rychla_pozicia;
+    /* Načítanie počas chôdze: načítanie nastaví polohu a stav postavy, nie jej obrázok – Samuel by ostal v póze
+     * kroku (zistené 24. 11. 2026). Preto ho doplnok najprv zastaví príkazom „choď na miesto, kde stojíš“
+     * (0x41c193 ako akcia move, zruší aj cieľ, napr. východ), chôdzu pretočí (bez snímok, ako po dvojkliku)
+     * a načíta, až keď stojí. Načítanie cez ponuku by fungovalo tiež, ale obraz by stál ~3 s. */
+    if (cez_ponuku) {
+        if (CHODZA && pocet_krokov - cez_ponuku < 250) {
+            if (!chodza_rezim) { chodza_rezim = 1; chodza_od = pocet_krokov; chodza_scena = SCENA; }
+            return;
+        }
+        cez_ponuku = 0;
+        hlaska_zrus();
+        nacitaj_hru(slot);
+        loguj("rychle nacitanie save.%d (po zastaveni), scena %s", slot, SCENA ? (char *)SCENA : "-");
+        hlaska(T_NACITANE);
+        return;
+    }
     if (!rychle_ziadost) return;
     int z = rychle_ziadost; rychle_ziadost = 0;
-    int ponuka = SCENA && !lstrcmpA((char *)SCENA, "1006.100e") && POUZIVATEL_POVOLENY() >= 1;   /* hlavná ponuka */
     if (z == 2 && ponuka) { /* načítanie aj z hlavnej ponuky (hneď po spustení hry) */ }
     else if (!herna_scena()) return;
-    else if (!hra_v_scene()) { if (z == 1) hlaska(T_NEDA_SA); return; }   /* rozhovor, animácia */
-    int slot = cfg_rychla_pozicia;
+    else if (!hra_v_scene()) { hlaska(z == 1 ? T_NEDA_SA : T_NEDA_SA_NACITAT); return; }   /* rozhovor, animácia, prechod */
     if (z == 1) {
         if (((fn0)0x409360)()) { hlaska(T_NEDA_SA); return; }       /* hra by uloženie odmietla */
         char *meno = (char *)0x5776e8 + slot * 0x33;
@@ -1009,10 +1026,23 @@ static void rychle_krok(void)
         while (n > 0 && subor[n - 1] != '\\') n--;
         wsprintfA(subor + n, "save.%d", slot);
         if (GetFileAttributesA(subor) == INVALID_FILE_ATTRIBUTES) { hlaska(T_NIE_JE); return; }
-        hlaska_zrus();
-        nacitaj_hru(slot);
-        loguj("rychle nacitanie save.%d, scena %s", slot, SCENA ? (char *)SCENA : "-");
-        hlaska(T_NACITANE);
+        if (ponuka) {
+            hlaska_zrus();
+            nacitaj_hru(slot);
+            loguj("rychle nacitanie save.%d (z ponuky), scena %s", slot, SCENA ? (char *)SCENA : "-");
+            hlaska(T_NACITANE);
+        } else if (CHODZA) {
+            int *p = (int *)0x49be28;
+            ((int (__cdecl *)(void *, int, int, int, int, int, int))0x41c193)((void *)0x49bde8, p[0], p[1], 0, -1, 1, 0);
+            cez_ponuku = pocet_krokov ? pocet_krokov : 1;
+            if (!chodza_rezim) { chodza_rezim = 1; chodza_od = pocet_krokov; chodza_scena = SCENA; }
+            loguj("rychle nacitanie: zastavenie chodze na %d,%d", p[0], p[1]);
+        } else {
+            hlaska_zrus();
+            nacitaj_hru(slot);
+            loguj("rychle nacitanie save.%d, scena %s", slot, SCENA ? (char *)SCENA : "-");
+            hlaska(T_NACITANE);
+        }
     }
 }
 
@@ -1334,6 +1364,7 @@ static void __cdecl zobraz(void)
         posledna = t;
     }
     if (chodza_rezim == 2) return;                      /* pretáčanie chôdze po dvojkliku: nič na obrazovku */
+    if (cez_ponuku) return;                             /* rýchle načítanie čaká na zastavenie: bez snímok */
     priehladne_nazvy();                                 /* editovaný názov hra vytvára každý krok nanovo */
     if (hw_kurzor_hra() && SCENA && *(int *)0x584ff8) ((void (__cdecl *)(unsigned char *))0x426c43)(SCENA);  /* bez kurzora hry */
     LARGE_INTEGER t0, t1; QueryPerformanceCounter(&t0);
