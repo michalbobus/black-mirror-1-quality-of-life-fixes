@@ -102,7 +102,7 @@ Meranie (19. 11. 2026, hlavná ponuka, relatívny pohyb cez `SendInput` vrátane
 | 60 | 0.5 | 80–81 | 230 |
 | 0 | 0.5 | 83 | 230–231 |
 
-Plynulý kurzor rýchlosť nemení (Fps 60 = pôvodná hra), citlivosť 0.5 presne polovičná. Od 23. 11. 2026 je predvolená citlivosť **0.7** (config.ini aj predvolená hodnota v kóde, keď kľúč chýba).
+Plynulý kurzor rýchlosť nemení (Fps 60 = pôvodná hra), citlivosť 0.5 presne polovičná. Od 23. 11. 2026 je predvolená citlivosť **0.7** (config.ini aj predvolená hodnota v kóde, keď kľúč chýba); od 24. 11. 2026 pri hardvérovom kurzore **0.5** (pre smooth a original sa odporúča 0.7).
 
 ## Doplnok pohodlia (DDraw.dll v C, 23. 11. 2026)
 Reťaz knižníc: hra → `DDraw.dll` (nový doplnok, `doplnok/bm_qol.c`) → všetky exporty preposlané na `bm_core.dll` (doterajší doplnok v assembleri: filmy, plynulý kurzor, citlivosť – len premenovaný) → `dgddraw.dll` (dgVoodoo2). Prekladá sa cez `zig cc` (Python balík `ziglang`), bez CRT, importuje kernel32/user32/gdi32 (winmm sa načíta za behu); `doplnok/zostav.bat`, oba doplnky naraz `build_plugin.bat`.
@@ -225,6 +225,8 @@ Overené 24. 11. 2026 (úvodný rozhovor v salóne, vstup každých 1,5 s, 15 s)
 - Jazyk hlášok podľa poznámok v config.ini (ako inštalácia): „kurzoru“ česky, „kurzora“ slovensky, inak anglicky.
 - Overené: Ctrl+L bez pozície → „Rýchla pozícia ešte nie je uložená“, Ctrl+S → save.98 + „Rýchle uloženie“, presun, Ctrl+L → Samuel späť na uloženom mieste + „Rýchle načítanie“, Ctrl+L z hlavnej ponuky po spustení hry, Ctrl+S v úvodnom rozhovore → „Teraz sa nedá uložiť“ (save.98 nezmenený). V savnames.txt sa zmenila len pozícia 98.
 - **Ctrl+L počas chôdze (opravené 24. 11. 2026):** načítanie nastaví polohu a stav postavy (0x49be28/2c, 0x49be3a), nie jej obrázok – Samuel ostal na uloženom mieste v póze kroku. Nepomohlo: `0x41fcc9` (postava, x, y, smer), pohyb na vlastné miesto až po načítaní. Načítanie z ponuky (ESC, potom Ctrl+L) je v poriadku, ale cez ponuku by obraz stál ~3 s (ponuka nabehne až po ~1,7 s a hra ju dokončuje). Riešenie: ak Samuel kráča, doplnok mu dá príkaz `0x41c193(0x49bde8, x, y, 0, −1, 1, 0)` na aktuálnu polohu (akcia move – zruší aj cieľ, napr. východ alebo obraz), chôdzu pretočí ako po dvojkliku (bez snímok, ~110 ms) a načíta, keď stojí (stav 0). Overené: cieľ podlaha, východ vľavo dole, obraz – vždy stojí na uloženom mieste, nikam neodíde. Počas prechodu cez východ (bez kontroly) hláška „Teraz sa nedá načítať“.
+- **Inventár po Ctrl+L z hlavnej ponuky (opravené 24. 11. 2026):** lišta inventára sa neukázala (predmety v poli `0x578c10` boli). Hlavná ponuka (aj ponuka cez ESC) inventár vypne skriptovým príkazom `0x43793d` (počítadlo `[0x48d2d8]` −1, 0 = vypnutý) a zapne ho až skript obrazovky nahrávania (`0x437986`, +1, najviac 1). Načítanie samo ho nemení – po Ctrl+L z ponuky ostal 0. Doplnok po každom rýchlom načítaní zavolá `0x437986`, ak je `[0x48d2d8]` < 1. Overené: Ctrl+L z hlavnej ponuky po spustení hry aj z ponuky cez ESC → 1, lišta s predmetmi.
+- **Citlivosť:** predvolená 0.5 pri hardvérovom kurzore (config aj predvolená hodnota v DDraw.dll, keď kľúč chýba), pre smooth/original sa odporúča 0.7 (bm_core má predvolenú 0.7).
 - Pozícia vytvorená mimo obrazovky ukladania má starý náhľad (savepic z naposledy otvorenej obrazovky Uložit) – obrazovka nahrávania náhľady neukazuje.
 
 ### Zapamätané nastavenia

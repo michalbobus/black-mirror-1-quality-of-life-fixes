@@ -961,6 +961,17 @@ static void do_kamenickych(const wchar_t *z, char *c, int max)
     c[i] = 0;
 }
 
+/* Rýchle načítanie: hlavná ponuka (aj ponuka ESC) vypne inventár skriptovým príkazom 0x43793d (počítadlo
+ * [0x48d2d8] -1) a zapne ho až skript obrazovky nahrávania (0x437986) – po Ctrl+L z hlavnej ponuky bol 0
+ * a lišta inventára sa neukázala (24. 11. 2026). Po rýchlom načítaní sa preto zapne, ak je vypnutý. */
+static void po_nacitani(void)
+{
+    if (*(int *)0x48d2d8 < 1) {
+        ((void (__cdecl *)(void))0x437986)();
+        loguj("po nacitani: inventar zapnuty (%d)", *(int *)0x48d2d8);
+    }
+}
+
 static void hlaska_zrus(void)
 {
     if (hlaska_anim && SCENA == hlaska_scena) {
@@ -1004,6 +1015,7 @@ static void rychle_krok(void)
         cez_ponuku = 0;
         hlaska_zrus();
         nacitaj_hru(slot);
+        po_nacitani();
         loguj("rychle nacitanie save.%d (po zastaveni), scena %s", slot, SCENA ? (char *)SCENA : "-");
         hlaska(T_NACITANE);
         return;
@@ -1029,6 +1041,7 @@ static void rychle_krok(void)
         if (ponuka) {
             hlaska_zrus();
             nacitaj_hru(slot);
+            po_nacitani();
             loguj("rychle nacitanie save.%d (z ponuky), scena %s", slot, SCENA ? (char *)SCENA : "-");
             hlaska(T_NACITANE);
         } else if (CHODZA) {
@@ -1040,6 +1053,7 @@ static void rychle_krok(void)
         } else {
             hlaska_zrus();
             nacitaj_hru(slot);
+            po_nacitani();
             loguj("rychle nacitanie save.%d, scena %s", slot, SCENA ? (char *)SCENA : "-");
             hlaska(T_NACITANE);
         }
@@ -1440,7 +1454,7 @@ static void instaluj(void)
     {
         char t[16]; GetPrivateProfileStringA("Cursor", "Mode", "hardware", t, sizeof t, cesta_ini);
         cfg_hw = (t[0] | 0x20) == 'h';
-        GetPrivateProfileStringA("Cursor", "Sensitivity", "0.7", t, sizeof t, cesta_ini);
+        GetPrivateProfileStringA("Cursor", "Sensitivity", cfg_hw ? "0.5" : "0.7", t, sizeof t, cesta_ini);   /* hardvérový kurzor: 0.5 */
         int c = 0, d = 1000, des = 0, cisla = 0;            /* „0.7“ -> 700 (tisíciny) */
         for (char *q = t; *q; q++) {
             if (*q >= '0' && *q <= '9') { cisla = 1; if (!des) c = c * 10 + (*q - '0'); else { d /= 10; c += (*q - '0') * d; } }
@@ -1448,7 +1462,7 @@ static void instaluj(void)
             else break;
         }
         if (!des) c *= 1000;
-        cfg_citl = !cisla ? 700 : c < 100 ? 100 : c > 1000 ? 1000 : c;
+        cfg_citl = !cisla ? (cfg_hw ? 500 : 700) : c < 100 ? 100 : c > 1000 ? 1000 : c;
         if (cfg_hw && cfg_citl < 1000) { void *f = (void *)hw_setcursorpos; zapis((void *)0x485280, &f, 4); }
         loguj("kurzor: hardware %d citlivost %d", cfg_hw, cfg_citl);
     }

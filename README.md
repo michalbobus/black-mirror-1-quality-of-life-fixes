@@ -27,8 +27,8 @@
 ### Myš / Mouse
 - **Najplynulejší kurzor (hardvérový)** – kurzor sa hýbe pri každom pohybe myši, nezávisle od toho, koľko snímok kreslí hra (tá kreslí 25 za sekundu). Pôvodný kurzor sa hýbal len 25-krát za sekundu. Hra pritom ide rovnakou rýchlosťou ako pôvodne. V `config.ini` sa dá prepnúť aj na plynulý kurzor (hra ho prekresľuje 60-krát za sekundu) alebo na pôvodný.<br>
   *Smoothest cursor (hardware)* – the cursor moves with every mouse movement, independently of how many frames the game draws (it draws 25 per second). The original cursor moved only 25 times per second. The game itself runs at its original speed. In `config.ini` you can also switch to the smooth cursor (redrawn by the game 60 times per second) or to the original one.
-- **Citlivosť myši** – kurzor je predvolene pomalší (0.7 z pôvodnej rýchlosti), dá sa nastaviť.<br>
-  *Mouse sensitivity* – the cursor is slower by default (0.7 of the original speed) and can be adjusted.
+- **Citlivosť myši** – kurzor je predvolene pomalší (0.5 z pôvodnej rýchlosti pri hardvérovom kurzore, pri ostatných režimoch sa odporúča 0.7), dá sa nastaviť.<br>
+  *Mouse sensitivity* – the cursor is slower by default (0.5 of the original speed with the hardware cursor, 0.7 is recommended for the other modes) and can be adjusted.
 - **Dvojklik = postava hneď v cieli** – po dvojkliku na miesto v scéne sa postava objaví v cieli bez animácie chôdze. Pri dvojkliku na predmet alebo východ je hneď pri ňom a hra pokračuje (prezretie, použitie, prechod do ďalšej scény).<br>
   *Double-click = character arrives instantly* – after a double-click on a spot in the scene the character appears there without the walking animation. When you double-click an object or an exit, the character is right there and the game goes on (looking, using, moving to the next scene).
 - **Koliesko myši listuje inventárom** – točením kolieska vyberáš predmety z inventára priamo na kurzor (dole = ďalší, hore = predchádzajúci), bez otvárania lišty dole.<br>
@@ -100,7 +100,7 @@ Inštalácia skopíruje do priečinka hry knižnice `DDraw.dll`, `bm_core.dll`, 
 | `[Movies] FullWidth` | 1 | filmy na celú šírku (0 = v obraze 4:3) | full-width movies (0 = inside the 4:3 picture) |
 | `[Cursor] Mode` | hardware | kurzor: `hardware` = najplynulejší (hardvérový), `smooth` = plynulý, `original` = pôvodný | cursor: `hardware` = smoothest (hardware cursor), `smooth`, `original` |
 | `[Cursor] Fps` | 60 | prekresľovanie kurzora za sekundu v režime `smooth` | cursor redraws per second in `smooth` mode |
-| `[Cursor] Sensitivity` | 0.7 | citlivosť myši 0.1 – 1.0 (1.0 = pôvodná rýchlosť) | mouse sensitivity 0.1 – 1.0 (1.0 = original speed) |
+| `[Cursor] Sensitivity` | 0.5 | citlivosť myši 0.1 – 1.0 (1.0 = pôvodná rýchlosť); pre `smooth` a `original` sa odporúča 0.7 | mouse sensitivity 0.1 – 1.0 (1.0 = original speed); 0.7 is recommended for `smooth` and `original` |
 | `[Controls] EscapeMenu` | 1 | ESC otvorí ponuku | ESC opens the menu |
 | `[Controls] SpaceHotspots` | 1 | medzerník ukáže aktívne miesta | Space shows hotspots |
 | `[Controls] HoldToSkip` | 1 | preskakovanie rozhovorov cez ESC a medzerník | skipping dialogue with ESC and Space |
