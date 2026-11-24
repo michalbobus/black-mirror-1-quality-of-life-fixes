@@ -50,17 +50,31 @@ if not exist "%~dp0dgvoodoo\config.%JAZYK%.ini" set "JAZYK=en"
 copy /y "%~dp0dgvoodoo\config.%JAZYK%.ini" "%HRA%\config.ini" >nul || goto chyba
 echo config.ini: %JAZYK%
 :config_hotovo
+rem Jazyk hlášok: česky + anglicky, ak je config.ini v hre český (slovo "kurzoru"), inak slovensky + anglicky
+set "HL=sk"
+if exist "%HRA%\config.ini" findstr /c:"kurzoru" "%HRA%\config.ini" >nul && set "HL=cs"
+rem pri výbere jazyka v tejto inštalácii platí výber
+if "%JAZYK%"=="cs" set "HL=cs"
+if "%JAZYK%"=="sk" set "HL=sk"
+if "%JAZYK%"=="en" set "HL=sk"
 rem agds.cfg: optimizedraw=0 = hra posiela na obrazovku vždy celú snímku (inak ostávajú zvyšky nápisov a kurzora)
 findstr /i /b "optimizedraw=" "%HRA%\agds.cfg" >nul || (>>"%HRA%\agds.cfg" echo optimizedraw=0) || goto chyba
 rem agds.cfg: videomem=0 = zadný povrch v systémovej pamäti (rýchle kreslenie, potrebné pre plynulý kurzor)
 findstr /i /b "videomem=" "%HRA%\agds.cfg" >nul || (>>"%HRA%\agds.cfg" echo videomem=0) || goto chyba
 rem Pri škálovaní Windows nad 100 % by okno vyšlo väčšie ako obrazovka - hra dostane príznak HIGHDPIAWARE
 reg add "HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" /v "%HRA%\agds.exe" /t REG_SZ /d "~ HIGHDPIAWARE" /f >nul || goto chyba
+if "%HL%"=="cs" goto hotovo_cs
 echo Hotovo: úpravy pre Black Mirror nainštalované do "%HRA%".
 echo Done: Black Mirror improvements installed to "%HRA%".
 echo Jednotlivé úpravy sa zapínajú/vypínajú v "%HRA%\config.ini".
 echo Each improvement can be switched on/off in "%HRA%\config.ini".
 pause & exit /b 0
+:hotovo_cs
+echo Hotovo: úpravy pro Black Mirror nainstalovány do "%HRA%".
+echo Done: Black Mirror improvements installed to "%HRA%".
+echo Jednotlivé úpravy se zapínají/vypínají v "%HRA%\config.ini".
+echo Each improvement can be switched on/off in "%HRA%\config.ini".
+pause & exit /b 0
 :chyba
-echo Inštalácia zlyhala. / Installation failed.
+if "%HL%"=="cs" (echo Instalace selhala. / Installation failed.) else (echo Inštalácia zlyhala. / Installation failed.)
 pause & exit /b 1

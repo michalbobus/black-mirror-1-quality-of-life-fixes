@@ -17,11 +17,14 @@ if not exist "%HRA%\agds.exe" (
   pause & exit /b 1
 )
 echo Hra / Game: "%HRA%"
+rem Jazyk hlášok: česky + anglicky, ak je config.ini v hre český (slovo "kurzoru"), inak slovensky + anglicky
+set "HL=sk"
+if exist "%HRA%\config.ini" findstr /c:"kurzoru" "%HRA%\config.ini" >nul && set "HL=cs"
 for %%S in (DDraw.dll bm_core.dll bm_qol.log dgddraw.dll D3DImm.dll dgVoodoo.conf config.ini) do if exist "%HRA%\%%S" del "%HRA%\%%S"
 if exist "%HRA%\agds.cfg" (
   findstr /i /v /b "optimizedraw= videomem=" "%HRA%\agds.cfg" > "%HRA%\agds.cfg.tmp" && move /y "%HRA%\agds.cfg.tmp" "%HRA%\agds.cfg" >nul
 )
 reg delete "HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" /v "%HRA%\agds.exe" /f >nul 2>nul
-echo Hotovo: hra je vrátená do pôvodného stavu.
+if "%HL%"=="cs" (echo Hotovo: hra je vrácena do původního stavu.) else (echo Hotovo: hra je vrátená do pôvodného stavu.)
 echo Done: the game is restored to its original state.
 pause
