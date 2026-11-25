@@ -281,6 +281,9 @@ Overené v salóne: obdĺžniky sedia na všetkých 4 NPC aj na Samuelovi (`snim
 
 Neskúšané (nebolo treba): ReShade (FXAA/SMAA by pracovalo až na zväčšenom obraze z dgVoodoo, nie pred zväčšením), zväčšovače xBR/ScaleFX/FSR (dgVoodoo vlastné shadery nepodporuje).
 
+## Zoznam opráv pre ďalšie hry AGDS
+[ZOZNAM_OPRAV_AGDS.md](ZOZNAM_OPRAV_AGDS.md) – všetky opravené problémy s príčinou, riešením a ako sa im vyhnúť (pre patche NiBiRu, Reprobates a ďalších hier na AGDS). Pri každej ďalšej oprave doplniť.
+
 ## Benchmark (25. 11. 2026)
 `benchmark/benchmark.py` – automatická kontrola doplnkov na viacerých scénach (hala, podkrovie hradu = široká scéna s posunom, záhrada): zarovnanie hardvérového kurzora a polohy myši v hre na mriežke bodov vrátane okrajov, posun scény po chôdzi, značky medzerníka, plynulosť, kolieska ponuky po rýchlom načítaní s myšou hore, kurzor kreslený hrou (aj režimy `--profil smooth` / `original`). Pozície sú v `benchmark/pozicie/` (záloha – nahrávajú sa cez pozíciu 98 a Ctrl+L, pozície používateľa sa nemenia). Návod `benchmark/NAVOD.md`, výsledky `benchmark/vysledky/` (nie sú v gite).
 

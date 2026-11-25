@@ -119,11 +119,11 @@ Hodnoty zmenené v nastaveniach hry si doplnok zapisuje do sekcie `[Remembered]`
 *Values changed in the game's options are stored by the plugin in the `[Remembered]` section. Changes in `config.ini` take effect after restarting the game. Upscaling sharpness is set in `dgVoodoo.conf` (`Resampling = lanczos-3`, softer `bicubic` or the original `bilinear`).*
 
 ## Zmeny vo verziách / Changelog
-**1.0.2** (pripravuje sa / upcoming)
+**1.0.2** (25. 11. 2026) – z verzie 1.0.1 stačí v priečinku hry nahradiť `DDraw.dll`, z 1.0.0 nainštalovať cez ňu / *from version 1.0.1 it is enough to replace `DDraw.dll` in the game folder, from 1.0.0 install over it*
 - oprava: v scénach širších ako obrazovka (napr. podkrovie hradu) bol najplynulejší kurzor posunutý o posun scény – aktívne miesta nesedeli s kurzorom a do pravej časti obrazu sa kurzor nedal dostať<br>
   *fix: in scenes wider than the screen (e.g. the castle attic) the smoothest cursor was offset by the scene scroll – hotspots did not match the cursor and the cursor could not reach the right part of the screen*
-- oprava: po rýchlom načítaní (Ctrl+L) s myšou pri hornom okraji boli v širokej scéne ozubené kolieska ponuky vľavo namiesto vpravo hore<br>
-  *fix: after a quick load (Ctrl+L) with the mouse at the top edge, the menu gears in a wide scene were on the left instead of the top right*
+- oprava: po načítaní pozície v širokej scéne (rýchle načítanie s myšou pri hornom okraji alebo načítanie cez ponuku) boli ozubené kolieska ponuky vľavo namiesto vpravo hore<br>
+  *fix: after loading a saved game in a wide scene (quick load with the mouse at the top edge, or loading through the menu) the menu gears were on the left instead of the top right*
 
 **1.0.1** (24. 11. 2026)
 - oprava: počas CGI filmov sa už nezobrazuje kurzor (najplynulejší kurzor predtým ostal nad filmom z hlavnej ponuky); pôvodná hra počas filmov kurzor neukazuje<br>
@@ -139,6 +139,6 @@ Preklad DirectDraw na Direct3D 11 robí [dgVoodoo2](https://github.com/dege-dios
 *DirectDraw is translated to Direct3D 11 by [dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) 2.87.6 by Dégé (freeware), included in the package.*
 
 ## Pre vývojárov / For developers
-Technický popis, adresy v hre, merania a postupy testov sú v [DOKUMENTACIA.md](DOKUMENTACIA.md) (po slovensky). Doplnky sa zostavujú cez `build_plugin.bat`; zdroj nového doplnku je `doplnok/bm_qol.c` a pôvodný sa skladá cez `nastroje/zostav_dll.py`.
+Technický popis, adresy v hre, merania a postupy testov sú v [DOKUMENTACIA.md](DOKUMENTACIA.md) (po slovensky). Doplnky sa zostavujú cez `build_plugin.bat`; zdroj nového doplnku je `doplnok/bm_qol.c` a pôvodný sa skladá cez `nastroje/zostav_dll.py`. Zoznam opravených problémov s technickým popisom (pre ďalšie hry na engine AGDS) je v [ZOZNAM_OPRAV_AGDS.md](ZOZNAM_OPRAV_AGDS.md), automatický test na viacerých scénach v [benchmark/](benchmark/NAVOD.md).
 
-*The technical description, game addresses, measurements and test procedures are in [DOKUMENTACIA.md](DOKUMENTACIA.md) (in Slovak). The plugins are built with `build_plugin.bat`; the source of the new plugin is `doplnok/bm_qol.c` and the original one is assembled by `nastroje/zostav_dll.py`.*
+*The technical description, game addresses, measurements and test procedures are in [DOKUMENTACIA.md](DOKUMENTACIA.md) (in Slovak). The plugins are built with `build_plugin.bat`; the source of the new plugin is `doplnok/bm_qol.c` and the original one is assembled by `nastroje/zostav_dll.py`. The list of fixed problems with a technical description (for other AGDS engine games) is in [ZOZNAM_OPRAV_AGDS.md](ZOZNAM_OPRAV_AGDS.md), the automated multi-scene test in [benchmark/](benchmark/NAVOD.md).*
