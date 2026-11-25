@@ -8,6 +8,13 @@
 
 *Improvements for the original 2003 game Black Mirror (AGDS engine). The original game files are not modified: everything is done by add-on libraries in the game folder. Every improvement (except the display) can be switched on or off in `config.ini`.*
 
+## Video ukážka / Video preview
+[![Black Mirror – vylepšenia hrania / Quality of life fixes (YouTube)](https://img.youtube.com/vi/5DsL098C0nw/maxresdefault.jpg)](https://www.youtube.com/watch?v=5DsL098C0nw)
+
+Pôvodná hra a hra s úpravami vedľa seba – klikni na obrázok a video sa otvorí na YouTube.
+
+*The original game and the game with the improvements side by side – click the picture to open the video on YouTube.*
+
 ## Zoznam vylepšení / List of improvements
 
 ### Obraz / Display
