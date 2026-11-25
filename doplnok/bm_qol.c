@@ -165,7 +165,8 @@ static int kolieska_dole;
 /* Kolieska sú animácia s „postavou“ (+0x61), ktorej poloha +0x37e/+0x382 je v súradniciach scény: hra ich položí
  * (objekt +0x82) na posun scény + (730, 2). Pri rýchlom načítaní (Ctrl+L) s myšou pri hornom okraji ich vytvorí ešte pri posune 0
  * a scéna sa posunie až potom – v širokej scéne (podkrovie 10c8, posun 600) ostali vľavo (x 730 scény = 130
- * na obrazovke). Doplnok preto každý krok udrží kolieska na obrazovke na (730, 2). */
+ * na obrazovke). Rovnako pri načítaní cez ponuku pozície, ktorá kolieska obsahuje (uložená cez ponuku) – kolieska
+ * sa obnovia s posunom 0. Doplnok preto každý krok v hernej scéne udrží kolieska na obrazovke na (730, 2). */
 #define KOLIESKA_X 730
 #define KOLIESKA_Y 2
 static void poloha_koliesok(unsigned char *s, unsigned char *o)
@@ -183,7 +184,9 @@ static void poloha_koliesok(unsigned char *s, unsigned char *o)
 static void schovaj_kolieska(void)
 {
     unsigned char *s = SCENA, *o;
-    if (hra_v_scene() && (o = NAJDI_OBJEKT(s, "1006.100c"))) poloha_koliesok(s, o);
+    /* aj keď hráč ešte nemá kontrolu: po načítaní cez ponuku (Nahrát hru) ju dostane až o ~1,5 s a kolieska z pozície
+     * uloženej cez ponuku by dovtedy boli vľavo (zmerané 1,1 s na x 130) */
+    if (s && !FILM_BEZI && !zacina((char *)s, "1006.") && (o = NAJDI_OBJEKT(s, "1006.100c"))) poloha_koliesok(s, o);
     if (!hra_v_scene() || *(int *)0x507014 < 60) { kolieska_dole = 0; return; }
     if (++kolieska_dole < 25) return;
     kolieska_dole = 0;

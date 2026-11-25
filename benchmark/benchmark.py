@@ -15,6 +15,9 @@ Pre každú scénu:
      (animácia −10 − posun scény) musí byť pri bode (do 32 px) – kontroluje aj režimy smooth a original,
   0. kolieska ponuky – načítanie s myšou pri hornom okraji: kolieska musia byť vpravo hore (730, 2), aj po
      príchode myši k pravému hornému rohu; snímky horného pásu,
+  5. značky + ESC – kombinácie načítania (Ctrl+L, ponuka), koliesok a medzerníka s ESC: hra nesmie spadnúť
+     (pád v záhrade 24. 11. 2026), pozri znacky_a_esc,
+  6. načítanie cez ponuku – ESC → Nahrát hru → pozícia 8: kolieska vpravo hore od prvej vzorky (každých 0,12 s),
   2. posun scény – v širokej scéne klik na opačnú stranu (postava ide, scéna sa posunie) a znova zarovnanie,
   3. značky medzerníka – podržaný medzerník: počet značiek, všetky musia byť v hernej ploche, snímka obrazovky,
   4. plynulosť – krúženie myšou 3 s: kroky logiky/s, zobrazenia/s, presuny okna kurzora/s.
@@ -29,12 +32,76 @@ from ladenie import Kanal
 
 POZICIE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pozicie")
 SLOT = 98
+SLOT_PONUKA = 8          # pozícia na prvej strane obrazovky Nahrát hru – načítanie cez ponuku
+MENO_PONUKA = b"benchmark"
+
+def hra_bezi():
+    import subprocess
+    return b"agds.exe" in subprocess.run("tasklist /fi \"imagename eq agds.exe\" /nh", shell=True, capture_output=True).stdout
+
+def nahraj_cez_ponuku(h, subor, adr, meno):
+    """ESC → Nahrát hru → pozícia 8 (súbor z pozicie/ skopírovaný do save.8). Kolieska z pozície uloženej cez ponuku
+    sa obnovia ešte pri posune 0 – doplnok ich musí hneď presunúť vpravo hore (chyba 25. 11. 2026: ~1 s vľavo)."""
+    shutil.copy(os.path.join(POZICIE, subor), os.path.join(HRA, f"save.{SLOT_PONUKA}"))
+    presun(400, 300, 0.3); popredie(); klaves(0x1B); time.sleep(2.5)
+    klik(400, 269); time.sleep(2.5); klik(322, 189 + round((SLOT_PONUKA - 1) * 30.2))
+    vzorky = []; t = time.time()
+    while time.time() - t < 3.5:
+        time.sleep(0.12)
+        try: st = stav_hry(h); k = kolieska(h)
+        except Exception: continue
+        if not st["scena"].startswith("1006"): vzorky.append((round(time.time() - t, 2), st["scena"], k))
+    from PIL import ImageGrab
+    ImageGrab.grab(all_screens=True).save(os.path.join(adr, f"{meno}_4_nacitanie_cez_ponuku.png"))
+    return vzorky
+
+def znacky_esc(h):
+    """Podržaný medzerník (značky), hneď ESC (ponuka uvoľní scénu so značkami), ESC späť."""
+    presun(400, 300, 0.2); drz(0x20, "Medzerník"); time.sleep(0.4); pusti(0x20)
+    klaves(0x1B); time.sleep(2.5)
+    if not hra_bezi(): return False
+    klaves(0x1B); time.sleep(2.0)
+    return hra_bezi()
+
+def znacky_a_esc(h, subor):
+    """Pád z 24. 11. 2026 (záhrada): kombinácia načítania, koliesok (uložených v pozícii) a medzerníka – pri uvoľnení
+    scény hra uvoľnila aj pixely značiek doplnku. Kombinácie (po každej sa kontroluje, že hra beží):
+      a) 3× medzerník + ESC + ESC v scéne,
+      b) Ctrl+L a hneď medzerník + ESC (kolieska z pozície sú ešte v scéne),
+      c) Ctrl+L počas značiek (načítanie uvoľní scénu so značkami),
+      d) ESC → Nahrát hru → pozícia 8 a hneď medzerník + ESC."""
+    scena0 = stav_hry(h)["scena"]; vysl = {}
+    def skus(meno, fn):
+        try: ok = fn()
+        except Exception as e: ok = False; vysl[meno + "_chyba"] = repr(e)
+        vysl[meno] = bool(ok) and hra_bezi(); return vysl[meno]
+    shutil.copy(os.path.join(POZICIE, subor), os.path.join(HRA, f"save.{SLOT}"))
+    shutil.copy(os.path.join(POZICIE, subor), os.path.join(HRA, f"save.{SLOT_PONUKA}"))
+    if not skus("a_esc_3x", lambda: all(znacky_esc(h) for _ in range(3))): return dict(ok=False, **vysl)
+    def b():
+        popredie(); kombinacia(0x11, ord("L"), "Ctrl+L"); time.sleep(0.6); return znacky_esc(h)
+    if not skus("b_ctrl_l_znacky_esc", b): return dict(ok=False, **vysl)
+    def c():
+        presun(400, 300, 0.2); drz(0x20, "Medzerník"); time.sleep(0.4)
+        kombinacia(0x11, ord("L"), "Ctrl+L"); time.sleep(0.3); pusti(0x20); time.sleep(3); return hra_bezi()
+    if not skus("c_ctrl_l_pocas_znaciek", c): return dict(ok=False, **vysl)
+    def d():
+        popredie(); klaves(0x1B); time.sleep(2.5)
+        klik(400, 269); time.sleep(2.5); klik(322, 189 + round((SLOT_PONUKA - 1) * 30.2)); time.sleep(0.8)
+        return znacky_esc(h)
+    if not skus("d_ponuka_znacky_esc", d): return dict(ok=False, **vysl)
+    for _ in range(3):                           # po načítaní cez ponuku môže ostať hlavná ponuka – späť do hry
+        if not stav_hry(h)["scena"].startswith("1006"): break
+        popredie(); klaves(0x1B); time.sleep(2.5)
+    sc = stav_hry(h)["scena"]
+    return dict(ok=sc == scena0 and all(v for k, v in vysl.items() if not k.endswith("_chyba")), scena=sc, **vysl)
 
 # (meno, súbor v pozicie/, popis) – nová scéna = pridať riadok a súbor pozície
 SCENY = [
-    ("hala",      "hala.save",       "hala zámku (save.1 pôvodnej hry), úzka scéna, 5 východov"),
-    ("podkrovie", "puda_hrad.save",  "podkrovie hradu 10c8 – scéna širšia ako obraz (posun 600 px), chyba kurzora 25. 11. 2026"),
-    ("zahrada",   "zahrada.save",    "záhrada 10ab (save.3 používateľa z 24. 11. 2026, scéna dielu hotspoty vo videu)"),
+    ("hala",       "hala.save",         "hala zámku (save.1 pôvodnej hry), úzka scéna, 5 východov"),
+    ("podkrovie",  "puda_hrad.save",    "podkrovie hradu 10c8 – scéna širšia ako obraz (posun 600 px), chyba kurzora 25. 11. 2026"),
+    ("podkrovie2", "puda_hrad_2.save",  "podkrovie 10c8 uložené cez ponuku (pozícia 4 používateľa) – kolieska vľavo pri načítaní cez ponuku"),
+    ("zahrada",    "zahrada.save",      "záhrada 10ab s kolieskami uloženými v pozícii (save.3) – pád pri medzerníku + ESC 24. 11. 2026, diel hotspoty vo videu"),
 ]
 
 def i32(h, a): return struct.unpack("<i", pamat.citaj(h, a, 4))[0]
@@ -74,8 +141,12 @@ def zarovnanie(h, body, rezim):
     for x, y in body:
         presun(x, y, 0.25); time.sleep(0.35)
         st = stav_hry(h); sx, sy = st["posun"]
+        opakovane = False
+        if (st["mys"][0] - sx, st["mys"][1] - sy) != (x, y):   # hra polohu ešte neprevzala (napr. dosúvanie scény) – raz znova
+            time.sleep(0.6); st = stav_hry(h); sx, sy = st["posun"]; opakovane = True
         gx, gy = st["mys"][0] - sx, st["mys"][1] - sy
         r = dict(bod=(x, y), mys_v_hre=(gx, gy), posun=(sx, sy), ok_mys=(gx, gy) == (x, y))
+        if opakovane: r["opakovane"] = True
         if st["kurzor"]:   # kurzor hry (animácia −10) na obrazovke: pri bode, posun obrázka voči myši najviac 32 px
             kx, ky = st["kurzor"][0] - sx, st["kurzor"][1] - sy
             r["kurzor_hry"] = (kx, ky); r["ok_kurzor_hry"] = abs(kx - x) <= 32 and abs(ky - y) <= 32
@@ -153,7 +224,11 @@ def scena(meno, subor, popis, rezim, h, kanal, adr):
     for _ in range(60):
         if stav_hry(h)["stav_postavy"] == 0: break
         time.sleep(0.2)
-    time.sleep(0.8); st2 = stav_hry(h)
+    time.sleep(0.8)
+    for _ in range(20):                          # posun scény sa po chôdzi ešte dosúva
+        p1 = stav_hry(h)["posun"]; time.sleep(0.3)
+        if stav_hry(h)["posun"] == p1: break
+    st2 = stav_hry(h)
     v["posun_po_chodzi"] = st2["posun"]; v["scena_po_chodzi"] = st2["scena"]
     if st2["scena"] == st["scena"]:
         v["zarovnanie_po_posune"] = zarovnanie(h, [(0, 300), (400, 300), (799, 300), (799, 540)], rezim)
@@ -165,6 +240,10 @@ def scena(meno, subor, popis, rezim, h, kanal, adr):
     v["ok_znacky"] = all(-30 <= x <= 800 and -30 <= y <= 600 for x, y in st3["znacky"])
     time.sleep(2.5)
     v["plynulost"] = plynulost(h, kanal)
+    v["znacky_esc"] = znacky_a_esc(h, subor)
+    if hra_bezi():
+        v["nacitanie_cez_ponuku"] = nahraj_cez_ponuku(h, subor, adr, meno)
+        v["ok_kolieska"] = v["ok_kolieska"] and all(k is None or tuple(k) == KOLIESKA for _, _, k in v["nacitanie_cez_ponuku"])
     zar = v["zarovnanie"] + v.get("zarovnanie_po_posune", [])
     v["ok_mys"] = all(r["ok_mys"] for r in zar)
     v["ok_okno"] = all(r.get("ok_okno", True) for r in zar)
@@ -182,7 +261,9 @@ def main():
     profil_ = dict(PO); profil_[("Cursor", "Mode")] = rezim
     vysledky = []
     try:
-        with OchranaPozicii(SLOT):
+        with OchranaPozicii(SLOT, SLOT_PONUKA):
+            mena = os.path.join(HRA, "savnames.txt"); d = bytearray(open(mena, "rb").read())
+            d[SLOT_PONUKA * 51:(SLOT_PONUKA + 1) * 51] = MENO_PONUKA + bytes(51 - len(MENO_PONUKA)); open(mena, "wb").write(d)
             spusti(profil_)
             h = pamat.otvor(pamat.pid_hry()); kanal = Kanal()
             for meno, subor, popis in vybrane:
@@ -201,6 +282,7 @@ def main():
                       f"myš {'OK' if v['ok_mys'] else 'ZLE'}  kurzor hry {'OK' if v['ok_kurzor_hry'] else 'ZLE'}  "
                       f"okno kurzora {('OK' if v['ok_okno'] else 'ZLE') if rezim == 'hardware' else '–'}  "
                       f"kolieska {'OK' if v['ok_kolieska'] else 'ZLE'} {v['kolieska_po_nacitani']}  "
+                      f"značky+ESC {'OK (hra nespadla)' if v.get('znacky_esc', {}).get('ok') else 'ZLE ' + str(v.get('znacky_esc'))}  "
                       f"značky {len(v['znacky'])} {'OK' if v['ok_znacky'] else 'ZLE'}  "
                       f"kroky {p['kroky_s']}/s  zobrazenia {p['zobrazenia_s']}/s  okno {p['presuny_okna_s']}/s")
         for r in zle: riadky.append(f"    bod {r['bod']}: myš v hre {r['mys_v_hre']}, okno {r.get('okno')} (čakané {r.get('okno_ocak')}), kurzor hry {r.get('kurzor_hry')}")
