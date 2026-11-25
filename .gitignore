@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 video/zaznamy/
 video/vystup/
+benchmark/vysledky/

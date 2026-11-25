@@ -1,9 +1,9 @@
 """Medzerník ukáže aktívne miesta scény (pôvodná hra: medzerník nerobí nič).
-Dve scény: hala (save.1) a záhrada (save.2 – pozícia sa len načíta, neukladá sa)."""
+Dve scény: hala (save.1) a záhrada (save.3 – pozícia sa len načíta, neukladá sa)."""
 from nahravac import *
 
 NAZOV = ("Medzerník ukáže aktívne miesta", "Space shows hotspots")
-SCENY = [("hala", 1, [(515, 300)]), ("zahrada", 2, [(250, 300), (600, 350)])]   # (meno, pozícia, kam s kurzorom)
+SCENY = [("hala", 1, [(515, 300)]), ("zahrada", 3, [(250, 300), (600, 350)])]   # (meno, pozícia, kam s kurzorom)
 
 def nahraj(verzia):
     for meno, slot, body in SCENY:

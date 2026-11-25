@@ -731,7 +731,10 @@ static int hw_kurzor_hra(void)
         if (a == prvy) break;
     }
     if (kurzor) {
-        int dx = I32(kurzor, 0x1c) - I32(s, 0x5d5) - MYS_X, dy = I32(kurzor, 0x20) - I32(s, 0x5d9) - MYS_Y;
+        /* animácia kurzora aj MYS_X/MYS_Y sú v súradniciach scény (obe už obsahujú posun scény +0x5d5/+0x5d9);
+         * posun scény sa tu nesmie odčítať znova – v širokej scéne (podkrovie 10c8, posun 600) bol kurzor
+         * posunutý doľava o celý posun a do pravej časti obrazu sa nedal dostať (chyba do 25. 11. 2026) */
+        int dx = I32(kurzor, 0x1c) - MYS_X, dy = I32(kurzor, 0x20) - MYS_Y;
         if (dx != hw_dx || dy != hw_dy) { hw_dx = dx; hw_dy = dy; InterlockedIncrement(&hw_verzia); }
     }
     hw_viditelny = kurzor != 0;

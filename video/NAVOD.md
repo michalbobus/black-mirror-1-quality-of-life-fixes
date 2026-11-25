@@ -32,7 +32,7 @@ Hlasitosť systému nevadí: zvuk sa nahráva cez WASAPI loopback pred systémov
 | `obraz` | karta o bezokrajovom okne + záber celej obrazovky 16:9 (Alt+Tab sa vo videu neukazuje) | hala (záznam `kurzor_po`) |
 | `filmy` | úvodný film novej hry vedľa seba | Nová hra |
 | `kurzor` | krúženie a prechod po predmetoch + spomalené 4× | hala (save.1) |
-| `hotspoty` | podržaný medzerník | hala + záhrada (save.2, len načítanie) |
+| `hotspoty` | podržaný medzerník | hala + záhrada (save.3, len načítanie; záloha benchmark/pozicie/zahrada.save) |
 | `dvojklik` | klik vs. dvojklik, potom k východu do jedálne | hala |
 | `preskakovanie` | podržaný ESC v úvode novej hry, časovače, pôvodná hra zrýchlene 12× (2:54 → 0:02) | rozprávač + salón |
 | `vyhladzovanie` | zväčšený detail Samuela, dva výrezy | hala |

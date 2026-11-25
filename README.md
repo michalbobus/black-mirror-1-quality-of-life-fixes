@@ -119,6 +119,10 @@ Hodnoty zmenené v nastaveniach hry si doplnok zapisuje do sekcie `[Remembered]`
 *Values changed in the game's options are stored by the plugin in the `[Remembered]` section. Changes in `config.ini` take effect after restarting the game. Upscaling sharpness is set in `dgVoodoo.conf` (`Resampling = lanczos-3`, softer `bicubic` or the original `bilinear`).*
 
 ## Zmeny vo verziách / Changelog
+**1.0.2** (pripravuje sa / upcoming)
+- oprava: v scénach širších ako obrazovka (napr. podkrovie hradu) bol najplynulejší kurzor posunutý o posun scény – aktívne miesta nesedeli s kurzorom a do pravej časti obrazu sa kurzor nedal dostať<br>
+  *fix: in scenes wider than the screen (e.g. the castle attic) the smoothest cursor was offset by the scene scroll – hotspots did not match the cursor and the cursor could not reach the right part of the screen*
+
 **1.0.1** (24. 11. 2026)
 - oprava: počas CGI filmov sa už nezobrazuje kurzor (najplynulejší kurzor predtým ostal nad filmom z hlavnej ponuky); pôvodná hra počas filmov kurzor neukazuje<br>
   *fix: the cursor is no longer shown during CGI movies (the smoothest cursor used to stay over the movie from the main menu); the original game shows no cursor during movies*
