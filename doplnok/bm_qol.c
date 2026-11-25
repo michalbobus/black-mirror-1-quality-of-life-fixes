@@ -162,9 +162,28 @@ static void otvor_ponuku(void)
  * po návrate do hry by ostali viditeľné – a ak sa hra uložila cez F5, uložia sa s pozíciou a sú vidno stále
  * (pozícia 2 z 24. 11. 2026). Preto ich doplnok skryje vždy, keď je myš aspoň 1 s (25 krokov) pod horným pásom. */
 static int kolieska_dole;
+/* Kolieska sú animácia s „postavou“ (+0x61), ktorej poloha +0x37e/+0x382 je v súradniciach scény: hra ich položí
+ * (objekt +0x82) na posun scény + (730, 2). Pri rýchlom načítaní (Ctrl+L) s myšou pri hornom okraji ich vytvorí ešte pri posune 0
+ * a scéna sa posunie až potom – v širokej scéne (podkrovie 10c8, posun 600) ostali vľavo (x 730 scény = 130
+ * na obrazovke). Doplnok preto každý krok udrží kolieska na obrazovke na (730, 2). */
+#define KOLIESKA_X 730
+#define KOLIESKA_Y 2
+static void poloha_koliesok(unsigned char *s, unsigned char *o)
+{
+    unsigned char *p = *(unsigned char **)(o + 0x82);    /* postava objektu (rovnaká ako +0x61 jeho animácie) */
+    if (!p) return;
+    int x = KOLIESKA_X + I32(s, 0x5d5), y = KOLIESKA_Y + I32(s, 0x5d9);
+    if (I32(p, 0x37e) != x || I32(p, 0x382) != y) {
+        loguj("kolieska: poloha %d,%d -> %d,%d", I32(p, 0x37e), I32(p, 0x382), x, y);
+        I32(p, 0x37e) = x; I32(p, 0x382) = y;
+        ((void (__cdecl *)(unsigned char *))0x426c43)(s);
+    }
+}
+
 static void schovaj_kolieska(void)
 {
     unsigned char *s = SCENA, *o;
+    if (hra_v_scene() && (o = NAJDI_OBJEKT(s, "1006.100c"))) poloha_koliesok(s, o);
     if (!hra_v_scene() || *(int *)0x507014 < 60) { kolieska_dole = 0; return; }
     if (++kolieska_dole < 25) return;
     kolieska_dole = 0;

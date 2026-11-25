@@ -11,7 +11,10 @@ Kľúče config.ini, ktoré benchmark mení, sa po behu vrátia (rovnako ako pri
 Pre každú scénu:
   1. zarovnanie – kurzor na mriežku bodov vrátane okrajov 0 a 799: poloha myši v hre (0x506ff0 − posun scény) sa musí
      rovnať zadanému bodu a okno hardvérového kurzora musí byť tam, kde by kurzor nakreslila hra
-     (animácia kurzora − posun scény, prepočítané na obrazovku) – odchýlka najviac 2 px obrazovky,
+     (animácia kurzora − posun scény, prepočítané na obrazovku) – odchýlka najviac 2 px obrazovky; kurzor hry
+     (animácia −10 − posun scény) musí byť pri bode (do 32 px) – kontroluje aj režimy smooth a original,
+  0. kolieska ponuky – načítanie s myšou pri hornom okraji: kolieska musia byť vpravo hore (730, 2), aj po
+     príchode myši k pravému hornému rohu; snímky horného pásu,
   2. posun scény – v širokej scéne klik na opačnú stranu (postava ide, scéna sa posunie) a znova zarovnanie,
   3. značky medzerníka – podržaný medzerník: počet značiek, všetky musia byť v hernej ploche, snímka obrazovky,
   4. plynulosť – krúženie myšou 3 s: kroky logiky/s, zobrazenia/s, presuny okna kurzora/s.
@@ -73,6 +76,9 @@ def zarovnanie(h, body, rezim):
         st = stav_hry(h); sx, sy = st["posun"]
         gx, gy = st["mys"][0] - sx, st["mys"][1] - sy
         r = dict(bod=(x, y), mys_v_hre=(gx, gy), posun=(sx, sy), ok_mys=(gx, gy) == (x, y))
+        if st["kurzor"]:   # kurzor hry (animácia −10) na obrazovke: pri bode, posun obrázka voči myši najviac 32 px
+            kx, ky = st["kurzor"][0] - sx, st["kurzor"][1] - sy
+            r["kurzor_hry"] = (kx, ky); r["ok_kurzor_hry"] = abs(kx - x) <= 32 and abs(ky - y) <= 32
         if rezim == "hardware" and st["kurzor"]:
             ok = okno_kurzora()
             ocak = (ox + (st["kurzor"][0] - sx) * m, oy + (st["kurzor"][1] - sy) * m)
@@ -80,6 +86,20 @@ def zarovnanie(h, body, rezim):
             r["ok_okno"] = ok is not None and abs(ok[0] - ocak[0]) <= 2 and abs(ok[1] - ocak[1]) <= 2
         vysl.append(r)
     return vysl
+
+KOLIESKA = (730, 2)     # kolieska ponuky (objekt 1006.100c) na obrazovke vpravo hore
+def kolieska(h):
+    """Poloha koliesok na obrazovke (postava objektu +0x82: +0x37e/+0x382 v súradniciach scény) alebo None."""
+    s = u32(h, 0x49eb1c); sx, sy = i32(h, s + 0x5d5), i32(h, s + 0x5d9)
+    prvy = u32(h, s + 0x40 + 0x28); o = prvy; obj = 0
+    for _ in range(3000):
+        if not o: break
+        if pamat.citaj(h, o + 8, 32).split(bytes(1))[0] == b"1006.100c": obj = o; break
+        o = u32(h, o)
+        if o == prvy: break
+    if not obj: return None
+    p = u32(h, obj + 0x82)          # postava objektu: poloha +0x37e/+0x382 v súradniciach scény
+    return (i32(h, p + 0x37e) - sx, i32(h, p + 0x382) - sy) if p else None
 
 def plynulost(h, kanal, trvanie=3.0):
     k = u.FindWindowW("bmqol_kurzor", None); presuny = [0]; koniec_ = threading.Event()
@@ -102,14 +122,28 @@ def snimka(cesta):
     ImageGrab.grab(all_screens=True).save(cesta)
 
 def nahraj(subor):
-    """save z pozicie/ → save.98, Ctrl+L v hlavnej ponuke, čakanie na hernú scénu."""
+    """save z pozicie/ → save.98, Ctrl+L (prvá scéna z hlavnej ponuky, ďalšie z predchádzajúcej scény), čakanie na
+    scénu. Myš je pri načítaní zámerne pri hornom okraji: hra vtedy vytvorí kolieska ponuky ešte pred posunom scény
+    (chyba 25. 11. 2026 – v podkroví boli kolieska vľavo)."""
     shutil.copy(os.path.join(POZICIE, subor), os.path.join(HRA, f"save.{SLOT}"))
+    presun(400, 8, 0.3); time.sleep(0.3)
     popredie(); kombinacia(0x11, ord("L"), "Ctrl+L"); time.sleep(5)
 
 def scena(meno, subor, popis, rezim, h, kanal, adr):
     print(f"--- {meno}: {popis}")
-    nahraj(subor); presun(400, 300, 0.3); time.sleep(1)
+    nahraj(subor)
     st = stav_hry(h); v = dict(meno=meno, popis=popis, scena=st["scena"], posun_start=st["posun"])
+    # kolieska ponuky po načítaní s myšou hore, potom aj po príchode myši k pravému hornému rohu
+    v["kolieska_po_nacitani"] = kolieska(h)
+    from PIL import ImageGrab
+    ox, oy, m = obraz_hry()
+    pas = (round(ox), round(oy), round(ox + 800 * m), round(oy + 70 * m))
+    ImageGrab.grab(bbox=pas).save(os.path.join(adr, f"{meno}_0_kolieska_po_nacitani.png"))
+    presun(400, 300, 0.3); time.sleep(1.5); presun(760, 10, 0.4); time.sleep(1.5)
+    v["kolieska_vpravo_hore"] = kolieska(h)
+    ImageGrab.grab(bbox=pas).save(os.path.join(adr, f"{meno}_0_kolieska_vpravo_hore.png"))
+    v["ok_kolieska"] = all(k is None or tuple(k) == KOLIESKA for k in (v["kolieska_po_nacitani"], v["kolieska_vpravo_hore"]))
+    presun(400, 300, 0.3); time.sleep(1.5)
     snimka(os.path.join(adr, f"{meno}_1_start.png"))
     mriezka = [(x, y) for y in (60, 300, 540) for x in (0, 200, 400, 600, 799)] + [(400, 0), (400, 599)]
     v["zarovnanie"] = zarovnanie(h, mriezka, rezim)
@@ -134,6 +168,7 @@ def scena(meno, subor, popis, rezim, h, kanal, adr):
     zar = v["zarovnanie"] + v.get("zarovnanie_po_posune", [])
     v["ok_mys"] = all(r["ok_mys"] for r in zar)
     v["ok_okno"] = all(r.get("ok_okno", True) for r in zar)
+    v["ok_kurzor_hry"] = all(r.get("ok_kurzor_hry", True) for r in zar)
     return v
 
 def main():
@@ -160,13 +195,15 @@ def main():
     riadky = [f"Benchmark {datetime.date.today()} – kurzor {rezim}", ""]
     for v in vysledky:
         if "chyba" in v: riadky.append(f"{v['meno']}: CHYBA {v['chyba']}"); continue
-        zle = [r for r in v["zarovnanie"] + v.get("zarovnanie_po_posune", []) if not (r["ok_mys"] and r.get("ok_okno", True))]
+        zle = [r for r in v["zarovnanie"] + v.get("zarovnanie_po_posune", []) if not (r["ok_mys"] and r.get("ok_okno", True) and r.get("ok_kurzor_hry", True))]
         p = v["plynulost"]
         riadky.append(f"{v['meno']} ({v['scena']}): posun {v['posun_start'][0]} → {v['posun_po_chodzi'][0]}  "
-                      f"myš {'OK' if v['ok_mys'] else 'ZLE'}  okno kurzora {'OK' if v['ok_okno'] else 'ZLE'}  "
+                      f"myš {'OK' if v['ok_mys'] else 'ZLE'}  kurzor hry {'OK' if v['ok_kurzor_hry'] else 'ZLE'}  "
+                      f"okno kurzora {('OK' if v['ok_okno'] else 'ZLE') if rezim == 'hardware' else '–'}  "
+                      f"kolieska {'OK' if v['ok_kolieska'] else 'ZLE'} {v['kolieska_po_nacitani']}  "
                       f"značky {len(v['znacky'])} {'OK' if v['ok_znacky'] else 'ZLE'}  "
                       f"kroky {p['kroky_s']}/s  zobrazenia {p['zobrazenia_s']}/s  okno {p['presuny_okna_s']}/s")
-        for r in zle: riadky.append(f"    bod {r['bod']}: myš v hre {r['mys_v_hre']}, okno {r.get('okno')} (čakané {r.get('okno_ocak')})")
+        for r in zle: riadky.append(f"    bod {r['bod']}: myš v hre {r['mys_v_hre']}, okno {r.get('okno')} (čakané {r.get('okno_ocak')}), kurzor hry {r.get('kurzor_hry')}")
     open(os.path.join(adr, "vysledok.txt"), "w", encoding="utf-8").write("\n".join(riadky) + "\n")
     print("\n".join(riadky)); print("výsledky:", adr)
 

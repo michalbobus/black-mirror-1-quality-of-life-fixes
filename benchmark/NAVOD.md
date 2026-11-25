@@ -15,7 +15,8 @@ Predtým skopírovať novú `dgvoodoo/DDraw.dll` do hry (benchmark testuje DLL n
 ## Čo sa kontroluje (pre každú scénu)
 | krok | kontrola | OK |
 |---|---|---|
-| zarovnanie | kurzor na 17 bodov vrátane okrajov (x 0 a 799, y 0 a 599) | poloha myši v hre (`0x506ff0` − posun scény) = zadaný bod; okno hardvérového kurzora je tam, kde by kurzor nakreslila hra (±2 px obrazovky) |
+| kolieska | načítanie (Ctrl+L) s myšou pri hornom okraji, potom myš vpravo hore | kolieska ponuky (`1006.100c`, postava `+0x82`) na obrazovke na (730, 2), snímky horného pásu `SCENA_0_kolieska_*.png`; `None` = kolieska nie sú v scéne (v poriadku) |
+| zarovnanie | kurzor na 17 bodov vrátane okrajov (x 0 a 799, y 0 a 599) | poloha myši v hre (`0x506ff0` − posun scény) = zadaný bod; okno hardvérového kurzora je tam, kde by kurzor nakreslila hra (±2 px obrazovky); kurzor hry (animácia −10) pri bode do 32 px – platí aj pre smooth a original |
 | posun scény | klik na opačnú stranu obrazu, postava ide (v širokej scéne sa scéna posunie), znova 4 body | rovnako ako zarovnanie |
 | značky | podržaný medzerník | značky (`bmqol_hotspot`) v hernej ploche, snímka |
 | plynulosť | krúženie myšou 3 s | kroky logiky/s (25), zobrazenia/s, presuny okna kurzora/s (stovky) |
@@ -38,3 +39,4 @@ Benchmark ich nahráva cez pozíciu 98 (rýchle načítanie Ctrl+L z hlavnej pon
 | dátum | stav |
 |---|---|
 | 25. 11. 2026 | hala, podkrovie (posun 600 → 428), záhrada: myš OK, okno kurzora OK, značky 8/6/6, 25 krokov/s, ~405 presunov okna/s. So starou DLL (pred opravou) podkrovie: okno kurzora o −1080 px vedľa. |
+| 25. 11. 2026 (oprava koliesok) | hardware: hala, podkrovie, záhrada všetko OK, kolieska (730, 2); smooth podkrovie: všetko OK, 25 krokov/s, 60 zobrazení/s. So DLL pred opravou koliesok: podkrovie kolieska (130, 2) = ZLE. |

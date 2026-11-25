@@ -122,6 +122,8 @@ Hodnoty zmenené v nastaveniach hry si doplnok zapisuje do sekcie `[Remembered]`
 **1.0.2** (pripravuje sa / upcoming)
 - oprava: v scénach širších ako obrazovka (napr. podkrovie hradu) bol najplynulejší kurzor posunutý o posun scény – aktívne miesta nesedeli s kurzorom a do pravej časti obrazu sa kurzor nedal dostať<br>
   *fix: in scenes wider than the screen (e.g. the castle attic) the smoothest cursor was offset by the scene scroll – hotspots did not match the cursor and the cursor could not reach the right part of the screen*
+- oprava: po rýchlom načítaní (Ctrl+L) s myšou pri hornom okraji boli v širokej scéne ozubené kolieska ponuky vľavo namiesto vpravo hore<br>
+  *fix: after a quick load (Ctrl+L) with the mouse at the top edge, the menu gears in a wide scene were on the left instead of the top right*
 
 **1.0.1** (24. 11. 2026)
 - oprava: počas CGI filmov sa už nezobrazuje kurzor (najplynulejší kurzor predtým ostal nad filmom z hlavnej ponuky); pôvodná hra počas filmov kurzor neukazuje<br>
